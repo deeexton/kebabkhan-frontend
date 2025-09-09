@@ -88,7 +88,7 @@ export default function Home() {
                   </div>
                   <div className="muted">Från grillen</div>
                   {(() => {
-                    const desc = (item as any).description || (item.name?.toLowerCase().includes('bröd') ? 'Serveras med bröd från stenugn' : '')
+                    const desc = (item as any).description || ''
                     return desc ? (
                       <div className="muted" style={{ fontSize:13, opacity:.9, marginTop:4 }}>{desc}</div>
                     ) : null
