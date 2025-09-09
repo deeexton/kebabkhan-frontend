@@ -93,17 +93,30 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="section alt">
-        <div className="container two-col">
-          <div style={{ display:'grid', gap:14 }}>
+      <section className="section alt" style={{ position:'relative', overflow:'hidden', marginLeft:'calc(50% - 50vw)', marginRight:'calc(50% - 50vw)' }}>
+        <div style={{ position:'absolute', inset:0, zIndex:0, overflow:'hidden' }} aria-hidden>
+          <video
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            style={{ width:'100%', height:'100%', objectFit:'cover', filter:'contrast(1.05) saturate(1.05)' }}
+          >
+            <source src="https://res.cloudinary.com/dbo4e8iuc/video/upload/v1757426020/drone-time-lapse-of-erbil-citadel-in-erbil-city-t-4k-2025-08-28-15-52-39-utc_pojwtn.mp4" type="video/mp4" />
+          </video>
+        </div>
+        <div style={{ position:'absolute', inset:0, zIndex:1, background:'linear-gradient(180deg, rgba(0,0,0,.65), rgba(0,0,0,.55))' }} />
+        <div className="container two-col" style={{ position:'relative', zIndex:2, alignItems:'start' }}>
+          <div style={{ display:'grid', gap:12 }}>
             <div className="eyebrow">Vår berättelse</div>
-            <h2 className="title-lg">Från Dohuk till Solna – samma eld, samma kärlek</h2>
-            <p className="muted">
+            <h2 className="title-lg" style={{ margin:0 }}>Från Erbil till Solna – samma eld, samma kärlek</h2>
+            <p className="muted" style={{ margin:0, maxWidth:760 }}>
               Kebabkhan föddes ur längtan efter smakerna vi vuxit upp med: den rökiga doften från kolen,
               syran från granatäppel och värmen från kummin, sumak och vitlök. Vi förenar tradition med kvalitet –
               färska råvaror, generösa portioner och en meny som speglar hjärtat av Mellanöstern och Kurdistan.
             </p>
-            <p className="muted">
+            <p className="muted" style={{ margin:0, maxWidth:760 }}>
               Hos oss är gästfrihet mer än ett ord. Den känns i hur vi hälsar dig välkommen, hur vi lägger upp din tallrik
               och i hur vi vill att du ska trivas – oavsett om du äter här, tar med dig hem eller beställer till dörren.
             </p>

@@ -44,6 +44,15 @@
       .no-scrollbar { scrollbar-width: none; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .price { color:#e5e5e5; font-weight:600; }
+      /* footer layout */
+      .footer-grid { display:grid; gap: 8px; grid-template-columns: 1fr auto 1fr; align-items:center; }
+      .footer-logo { justify-self:center; }
+      .footer-right { justify-self:end; text-align:left; }
+      @media (max-width: 900px) {
+        .footer-grid { grid-template-columns: 1fr; }
+        .footer-right { justify-self:start; }
+        .footer-logo { grid-row: 3; justify-self:center; margin-top:8px; }
+      }
     </style>
   </head>
   <body>

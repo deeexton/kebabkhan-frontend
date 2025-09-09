@@ -6,8 +6,8 @@ export default function CartDrawer() {
   const [open, setOpen] = useState(false)
   const cart = useCart()
   const loc = useLocation()
-  // Hide on admin pages and after order is placed (tracking page)
-  if (loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/order/')) return null
+  // Hide on admin pages, checkout, and after order is placed (tracking page)
+  if (loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/checkout') || loc.pathname.startsWith('/order/')) return null
   return (
     <div style={{ position:'fixed', right:16, bottom:16, zIndex:50 }}>
       <button className="btn" onClick={() => setOpen(v=>!v)}>
@@ -15,7 +15,30 @@ export default function CartDrawer() {
       </button>
       {open && (
         <div className="card" style={{ position:'absolute', right:0, bottom:'60px', width:320 }}>
-          <h3 style={{ marginTop:0 }}>Varukorg</h3>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+            <h3 style={{ marginTop:0, marginBottom:0 }}>Varukorg</h3>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Stäng"
+              style={{
+                width:26,
+                height:26,
+                display:'inline-flex',
+                alignItems:'center',
+                justifyContent:'center',
+                background:'transparent',
+                color:'#cfcfcf',
+                border:'1px solid #2a2a2a',
+                borderRadius:6,
+                lineHeight:1,
+                fontSize:16,
+                padding:0
+              }}
+            >
+              ×
+            </button>
+          </div>
           <div className="grid">
             {cart.lines.length===0 && <div className="muted">Tom</div>}
             {cart.lines.map(l=>(
