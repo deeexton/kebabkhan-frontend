@@ -13,6 +13,22 @@ export default function Home() {
   })
   const visibleItems = (grillItems.length ? grillItems : data).slice(0, 12)
   const rowRef = useRef<HTMLDivElement>(null)
+  // Track small screens to show one card at a time on phones
+  const [isPhone, setIsPhone] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const onChange = () => setIsPhone(mq.matches)
+    onChange()
+    // Add both listeners for broader browser support
+    mq.addEventListener?.('change', onChange)
+    // @ts-ignore legacy Safari
+    mq.addListener?.(onChange)
+    return () => {
+      mq.removeEventListener?.('change', onChange)
+      // @ts-ignore legacy Safari
+      mq.removeListener?.(onChange)
+    }
+  }, [])
   const scrollRow = (dir: 'left' | 'right') => {
     const el = rowRef.current
     if (!el) return
@@ -63,7 +79,7 @@ export default function Home() {
             <Link to="/menu" className="btn secondary">Se hela menyn</Link>
           </div>
           <div style={{ position:'relative', padding:'0 28px', overflow:'hidden' }}>
-            <div ref={rowRef} className="no-scrollbar" style={{ width:'100%', boxSizing:'border-box', display:'grid', gridAutoFlow:'column', gridAutoColumns:'calc((100% - 48px)/4)', gap:16, overflowX:'auto', scrollSnapType:'x mandatory', paddingBottom:8 }}>
+            <div ref={rowRef} className="no-scrollbar" style={{ width:'100%', boxSizing:'border-box', display:'grid', gridAutoFlow:'column', gridAutoColumns: isPhone ? 'calc(100% - 48px)' : 'calc((100% - 48px)/4)', gap:16, overflowX:'auto', scrollSnapType:'x mandatory', paddingBottom:8 }}>
               {visibleItems.map(item => (
                 <div key={item.id} className="menu-card" style={{ scrollSnapAlign:'start' }}>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr auto', alignItems:'center', gap:8 }}>
