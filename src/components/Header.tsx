@@ -5,12 +5,19 @@ export default function Header() {
   const loc = useLocation()
   const isAdmin = loc.pathname.startsWith('/admin')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   useEffect(() => {
     // Close menu on route change
     setMenuOpen(false)
   }, [loc.pathname])
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   return (
-    <header className="sticky">
+    <header className={`sticky ${scrolled ? 'scrolled' : ''}`}>
       <div className="container" style={{ padding:'12px 0' }}>
         {/* Desktop layout */}
         <div className="header-desktop" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -80,7 +87,8 @@ export default function Header() {
           .nav-desktop { display:none !important; }
           .hamburger { display:inline-flex !important; justify-self:end; }
           .header-desktop > a { display:none !important; }
-          .header-mobile-center { display:flex !important; }
+          .header-mobile-center { display:flex; }
+          header.scrolled .header-mobile-center { display:none !important; }
         }
       `}</style>
     </header>
