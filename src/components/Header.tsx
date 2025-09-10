@@ -79,7 +79,7 @@ export default function Header() {
           .header-desktop { display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; }
           .nav-desktop { display:none !important; }
           .hamburger { display:inline-flex !important; justify-self:end; }
-          .header-desktop > a { display:none; }
+          .header-desktop > a { display:none !important; }
           .header-mobile-center { display:flex !important; }
         }
       `}</style>
