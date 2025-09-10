@@ -86,7 +86,7 @@ export default function Header() {
           .nav-desktop { display:none !important; }
           .hamburger { display:inline-flex !important; justify-self:end; }
           .header-desktop > a { display:none !important; }
-          .header-mobile-center { display:flex; }
+          .header-mobile-center { display:flex !important; }
           header.scrolled .header-mobile-center { display:none !important; }
           header.menu-open .header-mobile-center { display:flex !important; }
         }
