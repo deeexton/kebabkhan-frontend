@@ -1,6 +1,29 @@
 export default function Kontakt() {
   return (
     <>
+      <section className="hero" style={{ marginLeft:'calc(50% - 50vw)', marginRight:'calc(50% - 50vw)', position:'relative' }}>
+        <div style={{ position:'absolute', inset:0, zIndex:0, overflow:'hidden' }} aria-hidden>
+          <video
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            style={{ width:'100%', height:'100%', objectFit:'cover', filter:'contrast(1.05) saturate(1.05)' }}
+          >
+            <source src="https://res.cloudinary.com/dbo4e8iuc/video/upload/v1757424335/fire-charcoal-2025-08-28-18-47-39-utc_eoxqht.mp4" type="video/mp4" />
+          </video>
+        </div>
+        <div style={{ position:'absolute', inset:0, zIndex:1, background:'linear-gradient(180deg, rgba(0,0,0,.60), rgba(0,0,0,.45) 30%, rgba(0,0,0,.35))' }} />
+        <div style={{ position:'absolute', top:12, left:'50%', transform:'translateX(-50%)', width:'min(1100px, 100%)', padding:'0 16px', zIndex:3 }}>
+          <div className="pill"><span className="dot"/> Kontakt</div>
+        </div>
+        <div className="container" style={{ display:'grid', gap:16, position:'relative', zIndex:2 }}>
+          <h1 className="title-xl" style={{ margin:0 }}>Hitta oss</h1>
+          <p className="muted" style={{ maxWidth:760 }}>Varmt välkommen till oss i Solna. Här hittar du adress, kontaktuppgifter och vägbeskrivning.</p>
+        </div>
+      </section>
+
       <section className="section">
         <div className="container" style={{ display:'grid', gap:24 }}>
           <div>
