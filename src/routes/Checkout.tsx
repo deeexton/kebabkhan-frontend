@@ -116,7 +116,7 @@ export default function Checkout() {
     <section style={{ display:'grid', gap:16 }}>
       <h2 style={{ marginTop:0 }}>Beställ</h2>
 
-      <div className="grid" style={{ gridTemplateColumns:'1.4fr 1fr' }}>
+      <div className="grid checkout-grid" style={{ gridTemplateColumns:'1.4fr 1fr' }}>
         <div className="grid" style={{ alignContent:'start' }}>
           <div className="card" style={{ display:'grid', gap:12 }}>
             <div>
@@ -140,7 +140,7 @@ export default function Checkout() {
             <div className="grid" style={{ gridTemplateColumns:'1fr' }}>
               {cart.lines.length===0 && <div className="muted">Varukorgen är tom</div>}
               {cart.lines.map((l, idx)=>(
-                <div key={l.item.id + '-' + idx} style={{ display:'grid', gridTemplateColumns:'1fr auto', alignItems:'center', gap:8 }}>
+                <div key={l.item.id + '-' + idx} className="order-line" style={{ display:'grid', gridTemplateColumns:'1fr auto', alignItems:'center', gap:8 }}>
                   <div>
                     <div><strong>{l.item.name}</strong></div>
                     <div className="muted">{displayPriceSEK(l.item.price)} kr</div>
@@ -152,7 +152,7 @@ export default function Checkout() {
                       </div>
                     )}
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <div className="order-line-actions" style={{ display:'flex', alignItems:'center', gap:8 }}>
                     <button className="btn secondary" onClick={()=>cart.dec(l.item.id)}>-</button>
                     <div>{l.qty}</div>
                     <button className="btn secondary" onClick={()=>cart.inc(l.item.id)}>+</button>
@@ -211,6 +211,13 @@ export default function Checkout() {
           </div>
         </div>
       </div>
+      <style>{`
+        @media (max-width: 900px) {
+          .checkout-grid { grid-template-columns: 1fr !important; }
+          .order-line { grid-template-columns: 1fr !important; align-items: start !important; }
+          .order-line-actions { flex-wrap: wrap; }
+        }
+      `}</style>
     </section>
   )
 }
