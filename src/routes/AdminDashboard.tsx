@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Api, Order, OrderStatus, MenuItem, WaitTimesConfig, WaitTimeScheduleItem, OptionGroup } from '../api'
+import { Api, Order, OrderStatus, MenuItem, WaitTimesConfig, WaitTimeScheduleItem, OptionGroup, CateringRequest, CateringStatus, AdminUser } from '../api'
 import OrderStatusBadge from '../components/OrderStatusBadge'
+import MenuGrid from '../components/MenuGrid'
 import { clearAdminToken } from '../api'
 import { socket } from '../socket'
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState<Order[]>([])
+  const [me, setMe] = useState<AdminUser | null>(null)
   const [stats, setStats] = useState<{ day:{orders:number;revenue:number}; week:{orders:number;revenue:number}; month:{orders:number;revenue:number}; topItems: { name:string; quantity:number }[] } | null>(null)
   const [eta, setEta] = useState<Record<string, number>>({})
   const [menu, setMenu] = useState<MenuItem[]>([])
-  const [activeTab, setActiveTab] = useState<'dashboard'|'orders'|'menu'|'inventory'|'wait'|'history'|'settings'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard'|'orders'|'menu'|'inventory'|'wait'|'history'|'catering'|'settings'>('dashboard')
+  const [catering, setCatering] = useState<CateringRequest[]>([])
+  const [toasts, setToasts] = useState<Array<{ id: string; text: string }>>([])
+  const [activeOrderDetail, setActiveOrderDetail] = useState<Order | null>(null)
+  const [now, setNow] = useState<number>(() => Date.now())
   const [defaultEta, setDefaultEta] = useState<{ dineIn: number; takeaway: number }>(() => {
     try {
       const raw = localStorage.getItem('admin.defaultEta')
@@ -18,8 +24,8 @@ export default function AdminDashboard() {
     return { dineIn: 15, takeaway: 20 }
   })
 
-  const loadOrders = async () => {
-    const list = await Api.listOrders()
+  const loadOrders = async (opts?: { activeOnly?: boolean }) => {
+    const list = opts?.activeOnly ? await Api.listActiveOrders() : await Api.listOrders()
     setOrders(list)
     // Prefill ETA for active orders if not set yet
     setEta(prev => {
@@ -58,17 +64,27 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    loadOrders();
-    Api.listMenu().then(setMenu).catch(()=>{})
-    Api.getOverviewStats().then(setStats as any).catch(()=>{})
-    // Pull current wait times to prefill ETAs
-    Api.adminGetWaitTimes().then(cfg => {
-      if (!cfg) return
-      setDefaultEta({
-        dineIn: typeof cfg.dineInMinutes === 'number' ? cfg.dineInMinutes : defaultEta.dineIn,
-        takeaway: typeof cfg.takeawayMinutes === 'number' ? cfg.takeawayMinutes : defaultEta.takeaway
-      })
-    }).catch(()=>{})
+    let mounted = true
+    ;(async () => {
+      try {
+        const current = await Api.adminMe().catch(()=>null)
+        if (!mounted) return
+        setMe(current)
+        const role = current?.role
+        const isSuperadmin = role === 'SUPERADMIN'
+        await Promise.all([
+          (async () => { await loadOrders({ activeOnly: !isSuperadmin }) })(),
+          (async () => { const m = await Api.listMenu().catch(()=>null); if (m && mounted) setMenu(m) })(),
+          (async () => { if (role !== 'KITCHEN') { const cfg = await Api.adminGetWaitTimes().catch(()=>null); if (!mounted || !cfg) return; setDefaultEta({ dineIn: typeof cfg.dineInMinutes === 'number' ? cfg.dineInMinutes : defaultEta.dineIn, takeaway: typeof cfg.takeawayMinutes === 'number' ? cfg.takeawayMinutes : defaultEta.takeaway }) } })(),
+          ...(isSuperadmin ? [
+            (async () => { const s = await Api.getOverviewStats().catch(()=>null); if (mounted) setStats(s as any) })(),
+            (async () => { const c = await Api.adminListCateringRequests().catch(()=>null); if (c && mounted) setCatering(c) })()
+          ] : [])
+        ])
+      } finally {
+        // continue
+      }
+    })()
 
     // Live updates via sockets per backend docs
     socket.emit('joinAdmin')
@@ -92,74 +108,203 @@ export default function AdminDashboard() {
         return next
       })
       // Refresh stats on changes
-      Api.getOverviewStats().then(setStats as any).catch(()=>{})
+      if (isSuperadmin) Api.getOverviewStats().then(setStats as any).catch(()=>{})
     }
     socket.on('orders:new', onNew)
     socket.on('orders:update', onUpdate)
+    const onCateringNew = (doc: any) => {
+      // Minimal normalize to keep UI consistent
+      setCatering(prev => [{
+        id: String(doc?.id || doc?._id || ''),
+        contactName: String(doc?.contactName || doc?.name || ''),
+        phone: String(doc?.phone || ''),
+        email: String(doc?.email || ''),
+        company: doc?.company || undefined,
+        eventDate: doc?.eventDate || undefined,
+        eventTime: doc?.eventTime || undefined,
+        guests: typeof doc?.guests === 'number' ? doc.guests : (doc?.guests ? Number(doc.guests) : undefined),
+        budgetPerPersonKr: typeof doc?.budgetPerPersonKr === 'number' ? doc.budgetPerPersonKr : (doc?.budgetPerPersonKr ? Number(doc.budgetPerPersonKr) : undefined),
+        street: doc?.street || doc?.locationAddress || undefined,
+        city: doc?.city || undefined,
+        postalCode: doc?.postalCode || undefined,
+        layout: doc?.layout,
+        needsEquipment: doc?.needsEquipment,
+        requiresServingStaff: doc?.requiresServingStaff,
+        allergies: doc?.allergies || doc?.dietary || undefined,
+        notes: doc?.notes || doc?.message || undefined,
+        status: (doc?.status || 'NEW') as CateringStatus,
+        createdAt: doc?.createdAt
+      }, ...prev])
+
+      // Show a toast
+      try {
+        const name = String(doc?.contactName || doc?.name || 'Ny förfrågan')
+        const guests = doc?.guests ? ` • ${doc.guests} gäster` : ''
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`
+        const text = `Ny cateringförfrågan: ${name}${guests}`
+        setToasts(prev => [{ id, text }, ...prev])
+      } catch {}
+    }
+    socket.on('catering:new', onCateringNew)
     return () => {
       socket.off('orders:new', onNew)
       socket.off('orders:update', onUpdate)
+      socket.off('catering:new', onCateringNew)
     }
   }, [])
 
+  // If user is not superadmin, default to orders tab
+  useEffect(() => {
+    if (me && me.role !== 'SUPERADMIN' && activeTab === 'dashboard') {
+      setActiveTab('orders')
+    }
+  }, [me, activeTab])
+
+  // ticking clock for admin countdowns
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Restore persisted catering toasts on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('admin.cateringToasts')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) setToasts(parsed)
+      }
+    } catch {}
+  }, [])
+
+  // Persist toasts whenever they change
+  useEffect(() => {
+    try {
+      if (toasts.length > 0) localStorage.setItem('admin.cateringToasts', JSON.stringify(toasts))
+      else localStorage.removeItem('admin.cateringToasts')
+    } catch {}
+  }, [toasts])
+
+  // Clear toasts when visiting the Catering tab
+  useEffect(() => {
+    if (activeTab === 'catering') {
+      setToasts([])
+      try { localStorage.removeItem('admin.cateringToasts') } catch {}
+    }
+  }, [activeTab])
+
+  const role = me?.role
+  const isKassa = role === 'KASSA'
+  const isKitchen = role === 'KITCHEN'
+  const isSuperadmin = role === 'SUPERADMIN'
+
   return (
     <section className="grid" style={{ gap:16 }}>
-      <div style={{ display:'grid', gridTemplateColumns:'240px 1fr', gap:16 }}>
+      {/* Toasts */}
+      <div style={{ position:'fixed', top:16, right:16, zIndex:1000, display:'grid', gap:8 }}>
+        {toasts.map(t => (
+          <div key={t.id} className="pill" style={{ background:'#141414', borderColor:'#444', cursor:'pointer' }} onClick={() => { setActiveTab('catering') }}>
+            <span className="dot"/>
+            <span>{t.text}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns: isSuperadmin ? '240px 1fr' : '1fr', gap:16 }}>
+        {isSuperadmin && (
         <aside className="card" style={{ position:'sticky', top:16, alignSelf:'start' }}>
           <nav style={{ display:'grid', gap:8 }}>
-            <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('dashboard')}>Översikt</button>
+            {isSuperadmin && (
+              <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('dashboard')}>Översikt</button>
+            )}
             <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('orders')}>Beställningar</button>
             <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('menu')}>Meny</button>
-            <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('inventory')}>Lager</button>
+            {isSuperadmin && (
+              <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('inventory')}>Lager</button>
+            )}
             <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('wait')}>Väntetider</button>
-            <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('history')}>Historik</button>
-            <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('settings')}>Inställningar</button>
+            {isSuperadmin && (
+              <>
+                <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('history')}>Historik</button>
+                <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('catering')}>Catering</button>
+                <button className="btn" style={{ height:48, textAlign:'left', justifyContent:'flex-start' }} onClick={()=>setActiveTab('settings')}>Inställningar</button>
+              </>
+            )}
             <LogoutButton />
           </nav>
         </aside>
+        )}
         <div style={{ display:'grid', gap:16 }}>
-          {activeTab === 'dashboard' && (
+          {!isSuperadmin && (
+            <div className="card" style={{ position:'sticky', top:16, zIndex:40, display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button className={`btn ${activeTab==='orders' ? '' : 'secondary'}`} onClick={()=>setActiveTab('orders')}>Beställningar</button>
+                {isKassa && <button className={`btn ${activeTab==='menu' ? '' : 'secondary'}`} onClick={()=>setActiveTab('menu')}>Meny</button>}
+                {isKassa && <button className={`btn ${activeTab==='wait' ? '' : 'secondary'}`} onClick={()=>setActiveTab('wait')}>Väntetider</button>}
+              </div>
+              <LogoutButton />
+            </div>
+          )}
+          {activeTab === 'dashboard' && isSuperadmin && (
             <DashboardPanel orders={orders} stats={stats} />
           )}
 
       {activeTab === 'orders' && (
         <div>
           <h3 style={{ marginTop:0 }}>Aktiva beställningar</h3>
-          {orders.filter(o => isOrderActive(o) || (o.status === 'READY' && !o.paid)).length === 0 ? (
-            <div className="card">Inga beställningar ännu.</div>
-          ) : (
-            <div className="grid">
-              {orders.filter(o => isOrderActive(o) || (o.status === 'READY' && !o.paid)).map(o=> (
-                <div className="card" key={o.id}>
+          {(() => {
+            const visible = isKitchen
+              ? orders.filter(o => isOrderActive(o))
+              : orders.filter(o => isOrderActive(o) || (o.status === 'READY' && !o.paid))
+            if (visible.length === 0) return <div className="card">Inga beställningar ännu.</div>
+            return (
+              <div className="grid">
+                {visible.map(o=> (
+                <div className="card" key={o.id} style={{ cursor:'pointer' }} onClick={() => setActiveOrderDetail(o)}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
                     <div>
                       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                        <strong>#{o.orderNumber || o.id}</strong>
+                        <strong>#{String(o.orderNumber || o.id).slice(-5).padStart(5,'0')}</strong>
                         <OrderStatusBadge status={o.status} />
                         <MethodBadge value={(o.type as any) || (o.method as any)} />
+                        {/* Tray number bubble next to payment badge if present */}
                         <PaidBadge paid={o.paid} method={o.paymentMethod} onClick={() => confirmAndTogglePaid(o.id, o.paid)} />
+                        {(() => {
+                          const tray = (o as any)?.customer?.table || (o as any)?.table || extractTrayFromNote((o as any)?.note)
+                          return tray ? (<span style={{ padding:'4px 8px', borderRadius:999, background:'#334155', color:'#fff', fontWeight:700 }}>{tray}</span>) : null
+                        })()}
                       </div>
                       <div className="muted">
                         {o.customerName || o.customer?.name}
                         {typeof (o.total ?? o.subtotal) === 'number' && <> • {displayPriceSEK(o.total ?? o.subtotal)} kr</>}
                         {o.createdAt && <> • {formatSwedishTimeOnly(o.createdAt)}</>}
+                        {renderCountdown(o, now)}
                       </div>
-                      {resolveDisplayItems(o, menu).length > 0 && (
-                        <div className="muted" style={{ marginTop:6 }}>
-                          {resolveDisplayItems(o, menu).map((it, idx) => (
-                            <span key={idx}>
-                              {it.qty}× {it.name}{idx < resolveDisplayItems(o, menu).length - 1 ? ', ' : ''}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {o.note && (
-                        <div className="muted" style={{ marginTop:6 }}>
-                          <strong>Meddelande:</strong> {o.note}
-                        </div>
-                      )}
+                      {/* Items list – one per row with extras beneath, similar to customer view */}
+                      <div className="grid" style={{ gridTemplateColumns:'1fr', gap:6, marginTop:6 }}>
+                        {(o.items || []).map((raw: any, idx: number) => {
+                          const display = resolveDisplayItems(o, menu)[idx]
+                          const name = display?.name || raw?.name || ''
+                          const qty = Number(raw?.qty ?? raw?.quantity ?? 1)
+                          const extras = Array.isArray(raw?.selectedOptions) ? raw.selectedOptions : []
+                          return (
+                            <div key={idx} style={{ display:'grid', gap:4 }}>
+                              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                <div><strong>{qty}× {name}</strong></div>
+                              </div>
+                              {extras.length > 0 && (
+                                <div className="muted" style={{ marginLeft:8 }}>
+                                  {extras.map((s: any, i: number) => (
+                                    <span key={i}>{s.groupName ? `${s.groupName}: ` : ''}{s.name || s.optionId}{s.quantity && s.quantity>1 ? ` x${s.quantity}` : ''}{i < extras.length-1 ? ', ' : ''}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {(() => { const clean = cleanNoteForDisplay((o as any)?.note); return clean ? <div className="muted" style={{ marginTop:6 }}><strong>Meddelande:</strong> {clean}</div> : null })()}
                     </div>
-                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }} onClick={(e)=>e.stopPropagation()}>
                       <input type="number" min={5} max={90} placeholder="ETA (min)" value={eta[o.id] ?? o.etaMinutes ?? ''} onChange={e=>setEta(prev=>({ ...prev, [o.id]: Number(e.target.value) }))} />
                       <button className="btn" onClick={()=>accept(o.id)}>Acceptera</button>
                       <button className="btn" onClick={()=>setStatus(o.id,'IN_KITCHEN')}>Tillagar</button>
@@ -175,19 +320,24 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {activeTab === 'menu' && (isSuperadmin || isKassa) && (
+        <div>
+          <h3 style={{ marginTop:0 }}>{isSuperadmin ? 'Menyhanterare' : 'Meny (Order)'}</h3>
+          {isSuperadmin ? (
+            <MenuManager menu={menu} onMenuChange={setMenu} />
+          ) : (
+            <KassaMenuOrder menu={menu} />
           )}
         </div>
       )}
 
-      {activeTab === 'menu' && (
-        <div>
-          <h3 style={{ marginTop:0 }}>Menyhanterare</h3>
-          <MenuManager menu={menu} onMenuChange={setMenu} />
-        </div>
-      )}
-
-      {activeTab === 'inventory' && (
+      {activeTab === 'inventory' && isSuperadmin && (
         <div>
           <h3 style={{ marginTop:0 }}>Lager</h3>
           <InventoryPanel menu={menu} onToggle={(id, isAvailable) => {
@@ -196,14 +346,14 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {activeTab === 'wait' && (
+      {activeTab === 'wait' && (isSuperadmin || isKassa) && (
         <div>
           <h3 style={{ marginTop:0 }}>Väntetider</h3>
-          <WaitTimesPanel />
+          <WaitTimesPanel readOnly={!isSuperadmin} />
         </div>
       )}
 
-      {activeTab === 'history' && (
+      {activeTab === 'history' && isSuperadmin && (
         <div>
           <h3 style={{ marginTop:0 }}>Historik</h3>
           <div className="grid">
@@ -212,24 +362,38 @@ export default function AdminDashboard() {
                 <h4 style={{ marginTop:0 }}>{date}</h4>
                 <div className="grid" style={{ gridTemplateColumns:'1fr' }}>
                   {list.map(o => (
-                    <div key={o.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
-                      <div>
+                    <div key={o.id} className="card" style={{ cursor:'pointer' }} onClick={() => setActiveOrderDetail(o)}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, justifyContent:'space-between' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                           <strong>#{o.orderNumber || o.id}</strong>
                           <OrderStatusBadge status={o.status} />
                         </div>
-                        <div className="muted">{formatSwedishTimeOnly(o.createdAt)}</div>
-                        {resolveDisplayItems(o, menu).length > 0 && (
-                          <div className="muted" style={{ marginTop:6 }}>
-                            {resolveDisplayItems(o, menu).map((it, idx) => (
-                              <span key={idx}>
-                                {it.qty}× {it.name}{idx < resolveDisplayItems(o, menu).length - 1 ? ', ' : ''}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        <div className="muted">{typeof (o.total ?? o.subtotal) === 'number' ? `${displayPriceSEK(o.total ?? o.subtotal)} kr` : ''}</div>
                       </div>
-                      <div className="muted">{typeof (o.total ?? o.subtotal) === 'number' ? `${displayPriceSEK(o.total ?? o.subtotal)} kr` : ''}</div>
+                      <div className="muted">{formatSwedishTimeOnly(o.createdAt)}</div>
+                      <div className="grid" style={{ gridTemplateColumns:'1fr', gap:6, marginTop:6 }}>
+                        {(o.items || []).map((raw: any, idx: number) => {
+                          const display = resolveDisplayItems(o, menu)[idx]
+                          const name = display?.name || raw?.name || ''
+                          const qty = Number(raw?.qty ?? raw?.quantity ?? 1)
+                          const extras = Array.isArray(raw?.selectedOptions) ? raw.selectedOptions : []
+                          return (
+                            <div key={idx} style={{ display:'grid', gap:4 }}>
+                              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                                <div><strong>{qty}× {name}</strong></div>
+                              </div>
+                              {extras.length > 0 && (
+                                <div className="muted" style={{ marginLeft:8 }}>
+                                  {extras.map((s: any, i: number) => (
+                                    <span key={i}>{s.groupName ? `${s.groupName}: ` : ''}{s.name || s.optionId}{s.quantity && s.quantity>1 ? ` x${s.quantity}` : ''}{i < extras.length-1 ? ', ' : ''}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {(() => { const raw = o.note || ''; const clean = raw.split('Valda tillbehör:')[0].trim(); return clean ? <div className="muted" style={{ marginTop:6 }}><strong>Meddelande:</strong> {clean}</div> : null })()}
                     </div>
                   ))}
                 </div>
@@ -238,12 +402,157 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-      {activeTab === 'settings' && (
+      {activeTab === 'catering' && isSuperadmin && (
+        <CateringPanel list={catering} onStatusChange={async (id, status) => {
+          const updated = await Api.adminUpdateCateringStatus(id, status)
+          setCatering(prev => prev.map(c => (c.id === id ? updated : c)))
+        }} />
+      )}
+      {activeTab === 'settings' && isSuperadmin && (
         <SettingsPanel />
+      )}
+      {activeOrderDetail && (
+        <OrderDetailsModal order={activeOrderDetail} menu={menu} onClose={() => setActiveOrderDetail(null)} />
       )}
         </div>
       </div>
     </section>
+  )
+}
+
+function OrderDetailsModal({ order, menu, onClose }: { order: Order; menu: MenuItem[]; onClose: () => void }) {
+  return (
+    <div className="card" onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'grid', placeItems:'center', zIndex:1000 }}>
+      <div className="card" onClick={(e)=>e.stopPropagation()} style={{ width:'min(760px, 92vw)', maxHeight:'90vh', overflow:'auto', display:'grid', gap:12 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <h3 style={{ marginTop:0 }}>Order #{order.orderNumber || order.id}</h3>
+          <OrderStatusBadge status={order.status} />
+        </div>
+        <div className="muted">{new Date(order.createdAt).toLocaleString('sv-SE')}</div>
+        <div className="card" style={{ display:'grid', gap:6 }}>
+          <div><strong>Kund:</strong> {order.customerName || order.customer?.name || '-'}</div>
+          <div><strong>Telefon:</strong> {order.phone || order.customer?.phone || '-'}</div>
+          {order.email && <div><strong>E-post:</strong> {order.email}</div>}
+          <div><strong>Metod:</strong> {(() => { const v = (order.type as any) || (order.method as any); return v==='DINE_IN' ? 'Äta här' : (v==='TAKEAWAY' || v==='TAKE_AWAY') ? 'Avhämtning' : v==='DELIVERY' ? 'Utkörning' : String(v||''); })()}</div>
+          {(() => { const clean = cleanNoteForDisplay(order.note); return clean ? <div><strong>Meddelande:</strong> {clean}</div> : null })()}
+        </div>
+        <div className="grid" style={{ gridTemplateColumns:'1fr', gap:6 }}>
+          {(order.items || []).map((raw: any, idx: number) => {
+            const name = (menu.find(m => String((m as any).id) === String(raw?.itemId || raw?.menuItemId))?.name) || raw?.name || 'Artikel'
+            const qty = Number(raw?.qty ?? raw?.quantity ?? 1)
+            const extras = Array.isArray(raw?.selectedOptions) ? raw.selectedOptions : []
+            return (
+              <div key={idx} style={{ display:'grid', gap:4 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div><strong>{qty}× {name}</strong></div>
+                  {typeof raw?.price === 'number' && <div className="muted">{displayPriceSEK(raw.price)} kr</div>}
+                </div>
+                {extras.length > 0 && (
+                  <div className="muted" style={{ marginLeft:8 }}>
+                    {extras.map((s: any, i: number) => (
+                      <span key={i}>{s.groupName ? `${s.groupName}: ` : ''}{s.name || s.optionId}{s.quantity && s.quantity>1 ? ` x${s.quantity}` : ''}{i < extras.length-1 ? ', ' : ''}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', marginTop:8, fontWeight:600 }}>
+          <div>Summa</div>
+          <div>{typeof (order.total ?? order.subtotal) === 'number' ? displayPriceSEK(order.total ?? order.subtotal) : ''} kr</div>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end' }}>
+          <button className="btn" onClick={onClose}>Stäng</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CateringPanel({ list, onStatusChange }: { list: CateringRequest[]; onStatusChange: (id: string, status: CateringStatus) => void | Promise<void> }) {
+  const statuses: CateringStatus[] = ['NEW','VIEWED','CONTACTED','QUOTED','CONFIRMED','REJECTED','ARCHIVED']
+  const [filter, setFilter] = useState<CateringStatus | 'ALL'>('ALL')
+  const filtered = list
+    .slice()
+    .sort((a,b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
+    .filter(x => filter === 'ALL' ? true : x.status === filter)
+  const svStatus = (s: CateringStatus): string => {
+    switch (s) {
+      case 'NEW': return 'Ny'
+      case 'VIEWED': return 'Visad'
+      case 'CONTACTED': return 'Kontaktad'
+      case 'QUOTED': return 'Offert skickad'
+      case 'CONFIRMED': return 'Bekräftad'
+      case 'REJECTED': return 'Avslagen'
+      case 'ARCHIVED': return 'Arkiverad'
+      default: return String(s)
+    }
+  }
+  const svLayout = (l: any): string => {
+    switch (l) {
+      case 'BUFFET': return 'Buffé'
+      case 'PLATED': return 'Tallriksservering'
+      case 'FAMILY_STYLE': return 'Familjeservering'
+      case 'OTHER': return 'Annat'
+      default: return l ? String(l) : ''
+    }
+  }
+
+  return (
+    <div>
+      <h3 style={{ marginTop:0 }}>Cateringförfrågningar</h3>
+      <div className="card" style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+        <label>Statusfilter:</label>
+        <select value={filter} onChange={e=>setFilter(e.target.value as any)}>
+          <option value="ALL">Alla</option>
+          {statuses.map(s => <option key={s} value={s}>{svStatus(s)}</option>)}
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="card">Inga förfrågningar.</div>
+      ) : (
+        <div className="grid" style={{ gridTemplateColumns:'1fr', gap:12 }}>
+          {filtered.map(c => (
+            <div key={c.id} className="card" style={{ display:'grid', gap:8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                <div style={{ display:'grid' }}>
+                  <strong>{c.contactName}</strong>
+                  <div className="muted" style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                    <span>{c.phone}</span>
+                    {c.email && <span>• {c.email}</span>}
+                    {c.company && <span>• {c.company}</span>}
+                    {c.createdAt && <span>• {new Date(c.createdAt).toLocaleString('sv-SE')}</span>}
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <select value={c.status} onChange={e=>onStatusChange(c.id, e.target.value as CateringStatus)}>
+                    {statuses.map(s => <option key={s} value={s}>{svStatus(s)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="muted" style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                {c.eventDate && <span>Datum: {c.eventDate}{c.eventTime ? ` ${c.eventTime}` : ''}</span>}
+                {typeof c.guests === 'number' && <span>• Gäster: {c.guests}</span>}
+                {typeof c.budgetPerPersonKr === 'number' && <span>• Budget/pp: {c.budgetPerPersonKr} kr</span>}
+                {c.layout && <span>• Upplägg: {svLayout(c.layout)}</span>}
+                {c.requiresServingStaff && <span>• Personal: {c.requiresServingStaff === 'YES' ? 'Ja' : 'Nej'}</span>}
+                {c.needsEquipment && <span>• Utrustning: {c.needsEquipment === 'YES' ? 'Ja' : 'Nej'}</span>}
+              </div>
+              {(c.street || c.postalCode || c.city) && (
+                <div className="muted">Adress: {[c.street, c.postalCode, c.city].filter(Boolean).join(', ')}</div>
+              )}
+              {c.allergies && (
+                <div><strong>Allergier/önskemål:</strong> {c.allergies}</div>
+              )}
+              {c.notes && (
+                <div><strong>Övrigt:</strong> {c.notes}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -274,6 +583,142 @@ function InventoryPanel({ menu, onToggle }: { menu: MenuItem[]; onToggle: (id: s
           </label>
         </div>
       ))}
+    </div>
+  )
+}
+
+function KassaMenuOrder({ menu }: { menu: MenuItem[] }) {
+  const [lines, setLines] = useState<Array<{ item: MenuItem; qty: number; selectedOptions?: { groupId: string; optionId: string; quantity: number }[] }>>([])
+  // Kassa flow: always dine-in; collect optional tray number (bordplacering)
+  const [table, setTable] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const add = (item: MenuItem, selected?: any[]) => {
+    setLines(prev => {
+      const idx = prev.findIndex(l => String(l.item.id) === String(item.id) && JSON.stringify(l.selectedOptions||[]) === JSON.stringify((selected||[]).map(s=>({ groupId:String(s.groupId), optionId:String(s.optionId), quantity:Number(s.quantity||1) }))))
+      if (idx !== -1) {
+        const next = [...prev]; next[idx] = { ...next[idx], qty: next[idx].qty + 1 }; return next
+      }
+      const sel = Array.isArray(selected) ? selected.map(s => ({ groupId: String(s.groupId), optionId: String(s.optionId), quantity: Number(s.quantity || 1) })) : undefined
+      return [...prev, { item, qty: 1, selectedOptions: sel }]
+    })
+  }
+  const dec = (i: number) => setLines(prev => prev.map((l,idx)=> idx===i ? { ...l, qty: Math.max(0, l.qty-1) } : l).filter(l=>l.qty>0))
+  const inc = (i: number) => setLines(prev => prev.map((l,idx)=> idx===i ? { ...l, qty: l.qty+1 } : l))
+  const remove = (i: number) => setLines(prev => prev.filter((_,idx)=>idx!==i))
+
+  const total = lines.reduce((sum, l) => sum + (l.item.price >= 1000 ? Math.round(l.item.price/100) : l.item.price) * l.qty, 0)
+
+  const submitPayment = async (paymentMethod: 'CASH' | 'CARD') => {
+    if (lines.length === 0) return
+    setSubmitting(true)
+    try {
+      const payload = {
+        type: 'DINE_IN' as const,
+        items: lines.map(l => ({ menuItemId: String(l.item.id), quantity: l.qty, selectedOptions: l.selectedOptions })),
+        note: table ? `Bricknummer: ${table}` : undefined,
+        paymentMethod
+      } as const
+      const res = await Api.kassaCreateOrder(payload)
+      if (res.paymentMethod === 'CASH') {
+        alert(`Order #${res.orderNumber || res.orderId} skapad. Tack!`)
+        setLines([]); setTable('')
+      } else if (res.paymentMethod === 'CARD') {
+        alert('Kortbetalning initierad. (Stripe-integration krävs)')
+        setLines([]); setTable('')
+      }
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Kunde inte skapa order')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="grid" style={{ gridTemplateColumns:'1fr', gap:16 }}>
+      <div className="card">
+        <MenuGrid
+          onAdd={add}
+          minColumnPx={220}
+          dense
+          columns={3}
+          extraGridItem={(
+            <div className="card" style={{ alignSelf:'start' }}>
+              <KassaCartPanel lines={lines} dec={dec} inc={inc} remove={remove} table={table} setTable={setTable} total={total} submitting={submitting} submitPayment={submitPayment} />
+            </div>
+          )}
+        />
+      </div>
+      {/* Cart panel now rendered as extra grid item inside MenuGrid */}
+    </div>
+  )
+}
+
+function KassaCartPanel({
+  lines,
+  dec,
+  inc,
+  remove,
+  table,
+  setTable,
+  total,
+  submitting,
+  submitPayment
+}: {
+  lines: { item: MenuItem; qty: number }[]
+  dec: (i: number) => void
+  inc: (i: number) => void
+  remove: (i: number) => void
+  table: string
+  setTable: (v: string) => void
+  total: number
+  submitting: boolean
+  submitPayment: (method: 'CASH' | 'CARD') => Promise<void>
+}) {
+  return (
+    <div style={{ display:'grid', gap:8 }}>
+      <div className="muted">Äta här</div>
+      <div className="grid" style={{ gridTemplateColumns:'1fr', gap:8 }}>
+        {lines.length === 0 ? (
+          <div className="muted">Tomt. Lägg till rätter från menyn.</div>
+        ) : (
+          lines.map((l, idx) => (
+            <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr auto', gap:8, alignItems:'center' }}>
+              <div>
+                <div><strong>{l.qty}× {l.item.name}</strong></div>
+              </div>
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <button className="btn secondary" onClick={()=>dec(idx)}>-</button>
+                <div>{l.qty}</div>
+                <button className="btn secondary" onClick={()=>inc(idx)}>+</button>
+                <button className="btn secondary" onClick={()=>remove(idx)}>Ta bort</button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <input
+        placeholder="Bricknummer (valfritt)"
+        inputMode="numeric"
+        value={table}
+        onChange={e=>{
+          const digits = e.target.value.replace(/\D/g,'').slice(0,2)
+          if (digits==='') { setTable(''); return }
+          const n = Math.max(1, Math.min(99, Number(digits)))
+          setTable(String(n))
+        }}
+      />
+      <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700 }}>
+        <div>Summa</div>
+        <div>{total} kr</div>
+      </div>
+      <div className="card" style={{ display:'grid', gap:8 }}>
+        <div className="muted">Välj betalningssätt</div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button className="btn" disabled={submitting || lines.length===0} onClick={()=>submitPayment('CASH')}>Kontant</button>
+          <button className="btn" disabled={submitting || lines.length===0} onClick={()=>submitPayment('CARD')}>Kort</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -318,8 +763,8 @@ function DashboardPanel({ orders, stats }: { orders: Order[]; stats: any | null 
   const pending = orders.filter(o => isOrderActive(o) || (o.status === 'READY' && !o.paid))
 
   return (
-    <div style={{ display:'grid', gap:16 }}>
-      <h2 style={{ marginTop:0 }}>Dashboard</h2>
+    <div style={{ display:'grid', gap:12 }}>
+      <h2 style={{ marginTop:0, marginBottom:4 }}>Dashboard</h2>
       <div className="grid" style={{ gridTemplateColumns:'repeat(3, minmax(220px, 1fr))' }}>
         <div className="card" style={{ display:'grid', gap:6 }}>
           <div className="muted">Dagens försäljning</div>
@@ -403,17 +848,21 @@ function MethodBadge({ value }: { value: 'DINE_IN' | 'TAKEAWAY' | 'TAKE_AWAY' | 
 }
 
 function PaidBadge({ paid, method, onClick }: { paid?: boolean; method?: 'CASH'|'CARD'|string; onClick?: () => void }) {
-  const label = typeof paid === 'boolean' ? (paid ? 'Betald' : 'Obetald') : (method === 'CASH' ? 'Obetald' : undefined)
+  // Always show a badge; paid === true => Betald, otherwise Obetald
+  const label = paid === true ? 'Betald' : 'Obetald'
   if (!label) return null
   const bg = paid ? '#16a34a' : '#ef4444'
   const style: React.CSSProperties = { padding:'4px 8px', borderRadius:999, background:bg, color:'#111', fontWeight:700, cursor: onClick ? 'pointer' : 'default' }
-  return <span style={style} onClick={onClick} title={paid ? 'Markera som obetald' : 'Markera som betald'}>{label}</span>
+  const handleClick: React.MouseEventHandler<HTMLSpanElement> | undefined = onClick
+    ? (e) => { e.stopPropagation(); onClick() }
+    : undefined
+  return <span style={style} onClick={handleClick} title={paid ? 'Markera som obetald' : 'Markera som betald'}>{label}</span>
 }
 
 function MenuManager({ menu, onMenuChange }: { menu: MenuItem[]; onMenuChange: (next: MenuItem[]) => void }) {
   const [name, setName] = useState('')
   const [sekPrice, setSekPrice] = useState<number | ''>('')
-  const [category, setCategory] = useState('Förrätter')
+  const [category, setCategory] = useState('Från Grillen')
   const [description, setDescription] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [isAvailable, setIsAvailable] = useState(true)
@@ -473,17 +922,26 @@ function MenuManager({ menu, onMenuChange }: { menu: MenuItem[]; onMenuChange: (
     'Från Grillen',
     'Varmrätter',
     'Mezerätter',
-    'Tillbehör',
-    'Dryck',
-    'Efterrätter',
-    'Bröd & tillbehör'
+    'Drycker',
+    'Tillbehör & Sötsaker'
   ]
+
+  const normalizeAdminCategory = (raw?: string): string => {
+    const c = (raw || '').trim().toLowerCase()
+    if (!c) return 'Från Grillen'
+    if (c.includes('förrätt') || c.includes('forratt') || c.includes('grill') || c.includes('från grillen') || c.includes('fran grillen')) return 'Från Grillen'
+    if (c.includes('huvudrätt') || c.includes('varmrätt')) return 'Varmrätter'
+    if (c.includes('meze')) return 'Mezerätter'
+    if (c.startsWith('dryck') || c.includes('drycker') || c.includes('dricka')) return 'Drycker'
+    if (c.includes('tillbeh') || c.includes('sidorätt') || c.includes('dessert') || c.includes('sötsak') || c.includes('sotsak') || c.includes('bröd') || c.includes('brod')) return 'Tillbehör & Sötsaker'
+    return 'Från Grillen'
+  }
 
   const onEdit = (m: MenuItem) => {
     setEditingId(getMenuItemId(m))
     setName(m.name)
     setSekPrice(m.price >= 1000 ? Math.round(m.price / 100) : m.price)
-    setCategory(m.category)
+    setCategory(normalizeAdminCategory(m.category))
     setDescription(m.description || '')
     setIsAvailable(!!m.isAvailable)
     setFile(null)
@@ -525,7 +983,7 @@ function MenuManager({ menu, onMenuChange }: { menu: MenuItem[]; onMenuChange: (
     setEditingId(null)
     setName('')
     setSekPrice('')
-    setCategory('Förrätter')
+    setCategory('Från Grillen')
     setDescription('')
     setIsAvailable(true)
     setFile(null)
@@ -684,6 +1142,7 @@ function normalizeIncomingOrder(raw: any): Order {
     email: raw?.email,
     status: raw?.status,
     etaMinutes: raw?.etaMinutes,
+    note: raw?.note || raw?.customer?.notes || raw?.customer?.note,
     orderNumber: raw?.orderNumber,
     driverGoogleEmail: raw?.driverGoogleEmail,
     driverLocation: raw?.driverLocation,
@@ -710,7 +1169,46 @@ function formatSwedishTimeOnly(dateIso: string): string {
   }
 }
 
-function WaitTimesPanel() {
+function extractTrayFromNote(note?: string): string | null {
+  if (!note) return null
+  const m = /Bricknummer:\s*(\d{1,2})/i.exec(note)
+  return m ? m[1] : null
+}
+
+function cleanNoteForDisplay(note?: string): string {
+  if (!note) return ''
+  // Remove tray line and any appended option list
+  let s = String(note)
+  s = s.replace(/Bricknummer:[^\n]*/gi, '')
+  const idx = s.indexOf('Valda tillbehör:')
+  if (idx !== -1) s = s.slice(0, idx)
+  return s.trim()
+}
+
+function renderCountdown(o: Order, nowMs: number): React.ReactNode {
+  try {
+    const acceptedAt = o.acceptedAt ? new Date(o.acceptedAt).getTime() : undefined
+    const etaMinutes = typeof o.etaMinutes === 'number' ? o.etaMinutes : undefined
+    if (!etaMinutes) return null
+    const base = acceptedAt || new Date(o.createdAt).getTime()
+    const end = base + etaMinutes * 60_000
+    const remainingMs = Math.max(0, end - nowMs)
+    const totalSeconds = Math.floor(remainingMs / 1000)
+    const mm = Math.floor(totalSeconds / 60)
+    const ss = String(totalSeconds % 60).padStart(2, '0')
+    return <> • {mm}:{ss}</>
+  } catch { return null }
+}
+
+function extractSelectedOptions(note?: string): string[] {
+  if (!note) return []
+  const idx = note.indexOf('Valda tillbehör:')
+  if (idx === -1) return []
+  const tail = note.slice(idx + 'Valda tillbehör:'.length).trim()
+  return tail.split(/\r?\n/).map(l => l.replace(/^[-\s]+/, '').trim()).filter(Boolean)
+}
+
+function WaitTimesPanel({ readOnly }: { readOnly?: boolean }) {
   const dayList: { label: string; value: number }[] = [
     { label: 'Söndag', value: 0 },
     { label: 'Måndag', value: 1 },
@@ -797,18 +1295,18 @@ function WaitTimesPanel() {
       <div className="card" style={{ display:'grid', gap:8, gridTemplateColumns:'repeat(4, minmax(160px, 1fr))' }}>
         <div>
           <div className="muted">Standard Väntetid (Äta på plats)</div>
-          <input type="number" min={0} value={config.dineInMinutes ?? ''} onChange={e=>onBaseChange('dineInMinutes', e.target.value)} />
+          <input type="number" min={0} value={config.dineInMinutes ?? ''} onChange={e=>onBaseChange('dineInMinutes', e.target.value)} disabled={!!readOnly} />
         </div>
         <div>
           <div className="muted">Standard Väntetid (Avhämtning)</div>
-          <input type="number" min={0} value={config.takeawayMinutes ?? ''} onChange={e=>onBaseChange('takeawayMinutes', e.target.value)} />
+          <input type="number" min={0} value={config.takeawayMinutes ?? ''} onChange={e=>onBaseChange('takeawayMinutes', e.target.value)} disabled={!!readOnly} />
         </div>
         <div>
           <div className="muted">Standard Väntetid (Leverans, valfritt)</div>
-          <input type="number" min={0} value={config.deliveryMinutes ?? ''} onChange={e=>onBaseChange('deliveryMinutes', e.target.value)} />
+          <input type="number" min={0} value={config.deliveryMinutes ?? ''} onChange={e=>onBaseChange('deliveryMinutes', e.target.value)} disabled={!!readOnly} />
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <input id="override" type="checkbox" checked={!!config.overrideSchedules} onChange={e=>setConfig(prev=>({ ...prev, overrideSchedules: e.target.checked }))} />
+          <input id="override" type="checkbox" checked={!!config.overrideSchedules} onChange={e=>setConfig(prev=>({ ...prev, overrideSchedules: e.target.checked }))} disabled={!!readOnly} />
           <label htmlFor="override">Nödläge: använd endast standardvärdena</label>
         </div>
       </div>
@@ -825,12 +1323,12 @@ function WaitTimesPanel() {
               {entries.length === 0 && <div className="muted">Inga intervall</div>}
               {entries.map(({ it, idx }) => (
                 <div key={idx} style={{ display:'grid', gridTemplateColumns:'120px 120px 140px 140px 140px auto', alignItems:'center', gap:8 }}>
-                  <input type="time" value={it.start} onChange={e=>updateSlot(idx, 'start', e.target.value)} />
-                  <input type="time" value={it.end} onChange={e=>updateSlot(idx, 'end', e.target.value)} />
-                  <input type="number" min={0} value={it.dineInMinutes ?? ''} onChange={e=>updateSlot(idx, 'dineInMinutes', Number(e.target.value))} placeholder="Dine-in (min)" />
-                  <input type="number" min={0} value={it.takeawayMinutes ?? ''} onChange={e=>updateSlot(idx, 'takeawayMinutes', Number(e.target.value))} placeholder="Avhämtning (min)" />
-                  <input type="number" min={0} value={it.deliveryMinutes ?? ''} onChange={e=>updateSlot(idx, 'deliveryMinutes', Number(e.target.value))} placeholder="Leverans (min)" />
-                  <button className="btn secondary" onClick={()=>removeSlot(idx)}>Ta bort</button>
+                  <input type="time" value={it.start} onChange={e=>updateSlot(idx, 'start', e.target.value)} disabled={!!readOnly} />
+                  <input type="time" value={it.end} onChange={e=>updateSlot(idx, 'end', e.target.value)} disabled={!!readOnly} />
+                  <input type="number" min={0} value={it.dineInMinutes ?? ''} onChange={e=>updateSlot(idx, 'dineInMinutes', Number(e.target.value))} placeholder="Dine-in (min)" disabled={!!readOnly} />
+                  <input type="number" min={0} value={it.takeawayMinutes ?? ''} onChange={e=>updateSlot(idx, 'takeawayMinutes', Number(e.target.value))} placeholder="Avhämtning (min)" disabled={!!readOnly} />
+                  <input type="number" min={0} value={it.deliveryMinutes ?? ''} onChange={e=>updateSlot(idx, 'deliveryMinutes', Number(e.target.value))} placeholder="Leverans (min)" disabled={!!readOnly} />
+                  {!readOnly && <button className="btn secondary" onClick={()=>removeSlot(idx)}>Ta bort</button>}
                 </div>
               ))}
             </div>
@@ -839,7 +1337,7 @@ function WaitTimesPanel() {
       })}
 
       <div>
-        <button className="btn" onClick={save} disabled={saving}>{saving ? 'Sparar...' : 'Spara'}</button>
+        {!readOnly && <button className="btn" onClick={save} disabled={saving}>{saving ? 'Sparar...' : 'Spara'}</button>}
       </div>
     </div>
   )
@@ -851,6 +1349,41 @@ function SettingsPanel() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // Online ordering status
+  const [storeOpen, setStoreOpen] = useState<boolean>(true)
+  const [storeMessage, setStoreMessage] = useState<string>('')
+  const [statusLoading, setStatusLoading] = useState(true)
+  const [statusSaving, setStatusSaving] = useState(false)
+  const [statusSaved, setStatusSaved] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const s = await Api.getStoreStatus()
+        if (!mounted) return
+        setStoreOpen(!!s.onlineOrdersOpen)
+        setStoreMessage(s.message || '')
+      } catch {
+        // keep defaults
+      } finally {
+        if (mounted) setStatusLoading(false)
+      }
+    })()
+    return () => { mounted = false }
+  }, [])
+
+  const saveStoreStatus = async () => {
+    setStatusSaving(true)
+    setStatusSaved(false)
+    try {
+      await Api.adminSetStoreStatus({ onlineOrdersOpen: !!storeOpen, message: storeMessage || undefined })
+      setStatusSaved(true)
+    } finally {
+      setStatusSaving(false)
+    }
+  }
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true); setSaved(false)
     // Placeholder – wire to backend when endpoint exists
@@ -859,13 +1392,42 @@ function SettingsPanel() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="card" style={{ display:'grid', gap:8, maxWidth:480 }}>
-      <h3 style={{ marginTop:0 }}>Inställningar</h3>
-      <input placeholder="Användarnamn" value={username} onChange={e=>setUsername(e.target.value)} />
-      <input type="email" placeholder="E-post" value={email} onChange={e=>setEmail(e.target.value)} />
-      <button className="btn" type="submit" disabled={saving}>{saving ? 'Sparar...' : 'Spara'}</button>
-      {saved && <div className="muted">Sparat!</div>}
-    </form>
+    <div className="grid" style={{ display:'grid', gap:12, maxWidth:680 }}>
+      <div className="card" style={{ display:'grid', gap:12 }}>
+        <h3 style={{ marginTop:0 }}>Onlinebeställningar</h3>
+        {statusLoading ? (
+          <div className="muted">Laddar status...</div>
+        ) : (
+          <>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'10px 12px', border:'1px solid #2a2a2a', borderRadius:8 }}>
+              <div style={{ fontWeight:600 }}>Ta emot beställningar</div>
+              <label style={{ display:'inline-flex', alignItems:'center', gap:8 }}>
+                <span className="muted">Av</span>
+                <input type="checkbox" checked={!!storeOpen} onChange={e=>setStoreOpen(e.target.checked)} />
+                <span className="muted">På</span>
+              </label>
+            </div>
+            <div className="muted">Stäng av när köket inte kan ta emot order online.</div>
+            <div>
+              <div className="muted" style={{ marginBottom:4 }}>Meddelande till kunder (visas när stängt)</div>
+              <textarea placeholder="Vi tar emot onlinebeställningar under våra öppettider. Välkommen tillbaka då." value={storeMessage} onChange={e=>setStoreMessage(e.target.value)} rows={3} />
+            </div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button className="btn" onClick={saveStoreStatus} disabled={statusSaving}>{statusSaving ? 'Sparar...' : 'Spara'}</button>
+              {statusSaved && <div className="muted">Sparat!</div>}
+            </div>
+          </>
+        )}
+      </div>
+
+      <form onSubmit={onSubmit} className="card" style={{ display:'grid', gap:8 }}>
+        <h3 style={{ marginTop:0 }}>Övrigt</h3>
+        <input placeholder="Användarnamn" value={username} onChange={e=>setUsername(e.target.value)} />
+        <input type="email" placeholder="E-post" value={email} onChange={e=>setEmail(e.target.value)} />
+        <button className="btn" type="submit" disabled={saving}>{saving ? 'Sparar...' : 'Spara'}</button>
+        {saved && <div className="muted">Sparat!</div>}
+      </form>
+    </div>
   )
 }
 

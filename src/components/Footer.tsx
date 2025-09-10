@@ -18,8 +18,9 @@ export default function Footer() {
         <div className="footer-right">
           <div><strong>Kebabkhan Kurdistan AB</strong></div>
           <div className="muted">Org nr: 559048-7244</div>
+          <div><a href="tel:087300025">08-730 00 25</a></div>
           <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:8 }}>
-            <a href="#" aria-label="Instagram" title="Instagram" style={{ display:'inline-flex', alignItems:'center' }}>
+            <a href="https://www.instagram.com/kebabkhankurdistan/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram" style={{ display:'inline-flex', alignItems:'center' }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="3" y="3" width="18" height="18" rx="5" stroke="#cfcfcf" strokeWidth="1.5"/>
                 <circle cx="12" cy="12" r="4.2" stroke="#cfcfcf" strokeWidth="1.5"/>

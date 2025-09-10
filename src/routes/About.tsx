@@ -1,14 +1,29 @@
 export default function About() {
   return (
     <>
-      <section className="hero">
-        <div className="container" style={{ display:'grid', gap:16 }}>
+      <section className="hero" style={{ marginLeft:'calc(50% - 50vw)', marginRight:'calc(50% - 50vw)', position:'relative' }}>
+        <div style={{ position:'absolute', inset:0, zIndex:0, overflow:'hidden' }} aria-hidden>
+          <video
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            style={{ width:'100%', height:'100%', objectFit:'cover', filter:'contrast(1.05) saturate(1.05)' }}
+          >
+            <source src="https://res.cloudinary.com/dbo4e8iuc/video/upload/v1757446247/aerial-footage-of-geli-ali-beg-waterfall-in-erbil-2025-08-29-03-07-03-utc_qcs5y1.mp4" type="video/mp4" />
+          </video>
+        </div>
+        <div style={{ position:'absolute', inset:0, zIndex:1, background:'linear-gradient(180deg, rgba(0,0,0,.60), rgba(0,0,0,.45) 30%, rgba(0,0,0,.35))' }} />
+        <div style={{ position:'absolute', top:12, left:'50%', transform:'translateX(-50%)', width:'min(1100px, 100%)', padding:'0 16px', zIndex:3 }}>
           <div className="pill"><span className="dot"/> Om oss</div>
+        </div>
+        <div className="container" style={{ display:'grid', gap:16, position:'relative', zIndex:2 }}>
           <h1 className="title-xl" style={{ margin:0 }}>Vår historia</h1>
           <p className="muted" style={{ maxWidth:760 }}>
-            Vi växte upp med en pappa som drev sin egen autentiska restaurang i Kurdistan, Dohuk. När vi kom till
-            Sverige tog vi med oss traditionen och kärleken till maten. Idag är vi två bröder – Derya och Diyar – som
-            driver Kebabkhan. Vi vill hålla kvar familjekänslan och lagar maten med kärlek så att våra gäster får smaka
+            Vi växte upp i Erbil där familjen drev restauranger. När vi kom till
+            Sverige tog vi med oss traditionen och kärleken till maten. Idag drivs Kebabkhan av Diar och Riad.
+            Vi vill hålla kvar familjekänslan och lagar maten med kärlek så att våra gäster får smaka
             den autentiska smaken från Kurdistan.
           </p>
         </div>
@@ -34,15 +49,15 @@ export default function About() {
               <div style={{ display:'flex', gap:12 }}>
                 <div className="pill"><span className="dot"/></div>
                 <div>
-                  <strong>Derya & Diyar</strong>
-                  <div className="muted">Bröder, uppvuxna i Dohuk – entreprenörer i Solna.</div>
+                  <strong>Diar & Riad</strong>
+                  <div className="muted">Uppvuxna i Erbil med många år i familjens restauranger – entreprenörer i Solna.</div>
                 </div>
               </div>
               <div style={{ display:'flex', gap:12 }}>
                 <div className="pill"><span className="dot"/></div>
                 <div>
                   <strong>Familjevibe</strong>
-                  <div className="muted">Vi bygger vidare på pappas arv – med hjärta och stolthet.</div>
+                  <div className="muted">Vi bygger vidare på familjens arv – med hjärta och stolthet.</div>
                 </div>
               </div>
               <div style={{ display:'flex', gap:12 }}>

@@ -63,8 +63,8 @@ export default function Home() {
             brödet bakas varmt och varje rätt byggs med stolthet. Välkommen till en upplevelse lika varm som vår glöd.
           </p>
           <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-            <Link to="/catering" className="btn">Catering</Link>
-            <Link to="/checkout" className="btn secondary">Beställ online</Link>
+            <Link to="/checkout" className="btn">Beställ online</Link>
+            <Link to="/catering" className="btn secondary">Catering</Link>
           </div>
         </div>
       </section>
@@ -76,7 +76,7 @@ export default function Home() {
               <div className="eyebrow">Från grillen</div>
               <h2 className="title-lg">Ett urval av vår kolgrill</h2>
             </div>
-            <Link to="/menu" className="btn secondary">Se hela menyn</Link>
+            <Link to="/meny" className="btn secondary">Se hela menyn</Link>
           </div>
           <div style={{ position:'relative', padding:'0 28px', overflow:'hidden' }}>
             <div ref={rowRef} className="no-scrollbar" style={{ width:'100%', boxSizing:'border-box', display:'grid', gridAutoFlow:'column', gridAutoColumns: isPhone ? 'calc(100% - 48px)' : 'calc((100% - 48px)/4)', gap:16, overflowX:'auto', scrollSnapType:'x mandatory', paddingBottom:8 }}>
@@ -137,8 +137,8 @@ export default function Home() {
               och i hur vi vill att du ska trivas – oavsett om du äter här, tar med dig hem eller beställer till dörren.
             </p>
             <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-              <Link to="/menu" className="btn">Smaka vår kultur</Link>
-              <Link to="/checkout" className="btn secondary">Beställ till bordet eller hem</Link>
+              <Link to="/checkout" className="btn">Beställ online</Link>
+              <Link to="/catering" className="btn secondary">Catering</Link>
             </div>
           </div>
           <div className="card" style={{ display:'grid', gap:12 }}>

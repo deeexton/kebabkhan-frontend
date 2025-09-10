@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { useCart } from '../store/cart'
 import { Link, useLocation } from 'react-router-dom'
+import { useStoreStatus } from '../store/storeStatus'
 
 export default function CartDrawer() {
   const [open, setOpen] = useState(false)
   const cart = useCart()
   const loc = useLocation()
+  const { status } = useStoreStatus()
+  const isClosed = status ? status.onlineOrdersOpen === false : false
   // Hide on admin pages, checkout, and after order is placed (tracking page)
   if (loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/checkout') || loc.pathname.startsWith('/order/')) return null
   return (
@@ -57,8 +60,17 @@ export default function CartDrawer() {
           </div>
           <div style={{ display:'flex', gap:8, marginTop:12 }}>
             <button className="btn secondary" onClick={() => { cart.clear(); setOpen(false) }}>Rensa</button>
-            <Link to="/checkout" className="btn">Till kassan</Link>
+            {isClosed ? (
+              <button className="btn" disabled title={status?.message || 'Restaurangen är stängd för onlinebeställningar just nu.'}>Stängt</button>
+            ) : (
+              <Link to="/checkout" className="btn">Till kassan</Link>
+            )}
           </div>
+          {isClosed && (
+            <div className="muted" style={{ marginTop:8 }}>
+              {status?.message || 'Restaurangen är stängd för onlinebeställningar just nu. Vi tar gärna emot din beställning under våra öppettider. Varmt välkommen tillbaka!'}
+            </div>
+          )}
         </div>
       )}
     </div>

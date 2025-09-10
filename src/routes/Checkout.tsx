@@ -1,14 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Api, OrderItem, OrderMethod } from '../api'
 import { useCart } from '../store/cart'
 import { useNavigate } from 'react-router-dom'
 import MenuGrid from '../components/MenuGrid'
+import { useStoreStatus } from '../store/storeStatus'
 
 const DELIVERY_POSTCODES = (import.meta.env.VITE_DELIVERY_POSTCODES || '17152,17121,17122,17123').split(',').map(s=>s.trim())
 
 export default function Checkout() {
   const cart = useCart()
   const nav = useNavigate()
+  const { status, loading, refresh } = useStoreStatus()
+  const isClosed = status ? status.onlineOrdersOpen === false : false
+  // Ensure we have the latest status when entering checkout
+  useEffect(() => { refresh().catch(()=>{}) }, [])
+
   const [method, setMethod] = useState<OrderMethod>('TAKE_AWAY')
   const [name, setName] = useState(''); const [phone,setPhone]=useState(''); const [email,setEmail]=useState('')
   const [address,setAddress]=useState(''); const [postalCode,setPostalCode]=useState(''); const [notes,setNotes]=useState(''); const [table,setTable]=useState('')
@@ -21,14 +27,54 @@ export default function Checkout() {
   useState(() => { Api.getWaitTimes().then(setWaitTimes).catch(()=>{}) })
 
   const placeOrder = async () => {
+    if (isClosed) {
+      setError(status?.message || 'Onlinebeställningar är tillfälligt stängda. Välkommen åter!')
+      return
+    }
     if (cart.lines.length === 0) return alert('Varukorgen är tom')
     if (method==='DELIVERY' && !DELIVERY_POSTCODES.includes(postalCode)) {
       return alert('Leverans är endast tillgänglig för specifika postnummer.')
     }
     setError(null); setPlacing(true)
     try {
-      // Use V2 payload shape per backend doc
-      const items = cart.lines.map(l => ({ menuItemId: l.item.id, quantity: l.qty }))
+      // Use V2 payload shape per backend doc, include selectedOptions per item
+      const items = cart.lines.map(l => ({
+        menuItemId: l.item.id,
+        quantity: l.qty,
+        selectedOptions: (l.selectedOptions || [])
+          .filter(sel => typeof sel.groupId === 'string' && typeof sel.optionId === 'string')
+          .map(sel => ({
+            groupId: String(sel.groupId),
+            optionId: String(sel.optionId),
+            quantity: Math.max(1, Math.round(Number(sel.quantity || 1)))
+          }))
+      }))
+      // Auto-append selected options into note so they appear in admin/history
+      const linesWithOptions = cart.lines.filter(l => Array.isArray(l.selectedOptions) && l.selectedOptions.length>0)
+      const stringifySelections = (l: typeof cart.lines[number]): string => {
+        const groups = l.item.optionGroups || []
+        const parts = (l.selectedOptions || []).map(sel => {
+          const g = groups.find((x: any) => String(x.id || x._id || x.name) === String(sel.groupId))
+          const o = (g?.options || []).find((opt: any) => String(opt.id || opt._id || opt.name) === String(sel.optionId))
+          if (!o) return ''
+          const qty = sel.quantity && sel.quantity !== 1 ? ` x${sel.quantity}` : ''
+          return `${o.name}${qty}`
+        }).filter(Boolean)
+        return parts.join(', ')
+      }
+      const autoOptionsNote = linesWithOptions.length>0
+        ? linesWithOptions.map(l => {
+            const opts = stringifySelections(l)
+            return opts ? `- ${l.qty}× ${l.item.name}: ${opts}` : ''
+          }).filter(Boolean).join('\n')
+        : ''
+      const trayLine = method === 'DINE_IN' && table ? `Bricknummer: ${table}` : ''
+      const baseNote = (() => {
+        if (!autoOptionsNote) return notes?.trim() || ''
+        if (notes && notes.trim()) return `${notes.trim()}\n\nValda tillbehör:\n${autoOptionsNote}`
+        return `Valda tillbehör:\n${autoOptionsNote}`
+      })()
+      const finalNote = [trayLine, baseNote].filter(Boolean).join('\n\n') || undefined
       const res = await Api.createOrderV2({
         type: method === 'DINE_IN' ? 'DINE_IN' : 'TAKEAWAY',
         paymentMethod,
@@ -36,13 +82,34 @@ export default function Checkout() {
         customerName: name,
         phone,
         email: email || undefined,
-        note: notes || undefined
+        note: finalNote,
+        table: method === 'DINE_IN' && table ? table : undefined
       })
       cart.clear()
       nav(`/order/${res.orderId}`)
     } catch (e: any) {
       setError(e?.message || 'Kunde inte skapa ordern')
     } finally { setPlacing(false) }
+  }
+
+  if (loading) {
+    return (
+      <section style={{ display:'grid', gap:16 }}>
+        <h2 style={{ marginTop:0 }}>Beställ</h2>
+        <div className="card">Kontrollerar beställningsstatus...</div>
+      </section>
+    )
+  }
+
+  if (isClosed) {
+    return (
+      <section style={{ display:'grid', gap:16 }}>
+        <h2 style={{ marginTop:0 }}>Beställ</h2>
+        <div className="card" style={{ background:'#141414', borderColor:'#333' }}>
+          {status?.message || 'Restaurangen är stängd för onlinebeställningar just nu. Vi tar gärna emot din beställning under våra öppettider. Varmt välkommen tillbaka!'}
+        </div>
+      </section>
+    )
   }
 
   return (
@@ -52,22 +119,18 @@ export default function Checkout() {
       <div className="grid" style={{ gridTemplateColumns:'1.4fr 1fr' }}>
         <div className="grid" style={{ alignContent:'start' }}>
           <div className="card" style={{ display:'grid', gap:12 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-              <div>
-                <div className="eyebrow">Meny</div>
-                <strong>Välj dina rätter</strong>
-              </div>
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                {(['DINE_IN','TAKE_AWAY','DELIVERY'] as OrderMethod[]).map(m=>(
-                  <button key={m} className={`btn ${method===m?'':'secondary'}`} onClick={()=>setMethod(m)}>{m.replaceAll('_',' ')}</button>
-                ))}
-              </div>
+            <div>
+              <div className="eyebrow">Meny</div>
+              <strong>Vill du lägga till något mer?</strong>
             </div>
             <div className="divider" />
             {waitTimes && (
               <div className="muted">Beräknad väntetid: {method==='DINE_IN' ? waitTimes.dineInMinutes : waitTimes.takeawayMinutes} min</div>
             )}
-            <MenuGrid onAdd={(item, selectedOptions) => cart.add(item, selectedOptions as any)} />
+            <MenuGrid
+              onAdd={(item, selectedOptions) => cart.add(item, selectedOptions as any)}
+              allowedCategories={["Mezerätter","Drycker","Tillbehör & Sötsaker"]}
+            />
           </div>
         </div>
 
@@ -80,10 +143,7 @@ export default function Checkout() {
                 <div key={l.item.id + '-' + idx} style={{ display:'grid', gridTemplateColumns:'1fr auto', alignItems:'center', gap:8 }}>
                   <div>
                     <div><strong>{l.item.name}</strong></div>
-                    <div className="muted">
-                      {displayPriceSEK(l.item.price)} kr
-                      {(() => { const d = lineOptionsDelta(l); return d>0 ? ` + ${displayPriceSEK(d)} kr` : '' })()}
-                    </div>
+                    <div className="muted">{displayPriceSEK(l.item.price)} kr</div>
                     {Array.isArray(l.selectedOptions) && l.selectedOptions.length>0 && (
                       <div className="muted" style={{ marginTop:4 }}>
                         {l.selectedOptions.map((s, i) => (
@@ -108,15 +168,32 @@ export default function Checkout() {
 
           <div className="card">
             <h3 style={{ marginTop:0 }}>Kunduppgifter</h3>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:8 }}>
+              {/* Swedish labels, no delivery */}
+              <button className={`btn ${method==='DINE_IN'?'':'secondary'}`} onClick={()=>setMethod('DINE_IN')}>Äta här</button>
+              <button className={`btn ${method==='TAKE_AWAY'?'':'secondary'}`} onClick={()=>setMethod('TAKE_AWAY')}>Avhämtning</button>
+            </div>
             <div className="grid">
               <input placeholder="Namn" value={name} onChange={e=>setName(e.target.value)} />
               <input placeholder="Telefon" value={phone} onChange={e=>setPhone(e.target.value)} />
               <input placeholder="E-post (valfritt)" value={email} onChange={e=>setEmail(e.target.value)} />
-              {method!=='DINE_IN' && <>
+              {method==='DELIVERY' && <>
                 <input placeholder="Adress" value={address} onChange={e=>setAddress(e.target.value)} />
                 <input placeholder="Postnummer" value={postalCode} onChange={e=>setPostalCode(e.target.value)} />
               </>}
-              {method==='DINE_IN' && <input placeholder="Bord (valfritt)" value={table} onChange={e=>setTable(e.target.value)} />}
+              {method==='DINE_IN' && (
+                <input
+                  placeholder="Bricknummer (valfritt)"
+                  inputMode="numeric"
+                  value={table}
+                  onChange={e=>{
+                    const digits = e.target.value.replace(/\D/g,'').slice(0,2)
+                    if (digits==='') { setTable(''); return }
+                    const n = Math.max(1, Math.min(99, Number(digits)))
+                    setTable(String(n))
+                  }}
+                />
+              )}
               <textarea placeholder="Meddelande (valfritt)" value={notes} onChange={e=>setNotes(e.target.value)} />
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
                 <label className={`btn ${paymentMethod==='CASH'?'':'secondary'}`} style={{ cursor:'pointer' }}>
@@ -129,7 +206,7 @@ export default function Checkout() {
                 </label>
               </div>
               {error && <div className="muted" style={{ color:'crimson' }}>{error}</div>}
-              <button className="btn" onClick={placeOrder} disabled={placing}>{placing ? 'Skickar...' : 'Skicka beställning'}</button>
+              <button className="btn" onClick={placeOrder} disabled={placing || isClosed} title={isClosed ? (status?.message || 'Onlinebeställningar är stängda.') : undefined}>{placing ? 'Skickar...' : (isClosed ? 'Stängt' : 'Skicka beställning')}</button>
             </div>
           </div>
         </div>

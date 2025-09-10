@@ -2,41 +2,41 @@ import { useState } from 'react'
 import { Api } from '../api'
 
 type FormState = {
-  name: string
+  contactName: string
   phone: string
   email: string
   company: string
   eventDate: string
   eventTime: string
   guests: string
-  budgetPerPerson: string
-  locationAddress: string
+  budgetPerPersonKr: string
+  street: string
   postalCode: string
   city: string
-  serviceStyle: 'BUFFET' | 'DROP_OFF' | 'LIVE_GRILL' | 'OTHER'
-  dietary: string
-  message: string
-  needStaff: boolean
-  needEquipment: boolean
+  layout: 'BUFFET' | 'PLATED' | 'FAMILY_STYLE' | 'OTHER'
+  requiresServingStaff: 'YES' | 'NO'
+  needsEquipment: 'YES' | 'NO'
+  allergies: string
+  notes: string
 }
 
 const initialState: FormState = {
-  name: '',
+  contactName: '',
   phone: '',
   email: '',
   company: '',
   eventDate: '',
   eventTime: '',
   guests: '',
-  budgetPerPerson: '',
-  locationAddress: '',
+  budgetPerPersonKr: '',
+  street: '',
   postalCode: '',
   city: '',
-  serviceStyle: 'BUFFET',
-  dietary: '',
-  message: '',
-  needStaff: true,
-  needEquipment: false
+  layout: 'BUFFET',
+  requiresServingStaff: 'YES',
+  needsEquipment: 'NO',
+  allergies: '',
+  notes: ''
 }
 
 export default function Catering() {
@@ -49,11 +49,9 @@ export default function Catering() {
   }
 
   function validate(): string | null {
-    if (!form.name.trim()) return 'Ange kontaktpersonens namn.'
+    if (!form.contactName.trim()) return 'Ange kontaktpersonens namn.'
     if (!/^\+?[0-9\s-]{7,}$/.test(form.phone.trim())) return 'Ange ett giltigt telefonnummer.'
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Ange en giltig e-postadress.'
-    if (!form.eventDate) return 'Välj ett datum för tillställningen.'
-    if (!form.guests || Number(form.guests) <= 0) return 'Ange antal gäster.'
+    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Ange en giltig e-postadress.'
     return null
   }
 
@@ -64,28 +62,31 @@ export default function Catering() {
     setSubmitting(true)
     setResult(null)
     try {
-      await Api.submitCateringRequest({
-        name: form.name.trim(),
+      const payload = {
+        contactName: form.contactName.trim(),
         phone: form.phone.trim(),
-        email: form.email.trim() || undefined,
+        email: form.email.trim(),
         company: form.company.trim() || undefined,
         eventDate: form.eventDate || undefined,
         eventTime: form.eventTime || undefined,
-        guests: form.guests ? Number(form.guests) : undefined,
-        budgetPerPerson: form.budgetPerPerson ? Number(form.budgetPerPerson) : undefined,
-        locationAddress: form.locationAddress.trim() || undefined,
-        postalCode: form.postalCode.trim() || undefined,
+        guests: form.guests ? Math.round(Number(form.guests)) : undefined,
+        budgetPerPersonKr: form.budgetPerPersonKr ? Math.round(Number(form.budgetPerPersonKr)) : undefined,
+        street: form.street.trim() || undefined,
         city: form.city.trim() || undefined,
-        serviceStyle: form.serviceStyle,
-        dietary: form.dietary.trim() || undefined,
-        message: form.message.trim() || undefined,
-        needStaff: !!form.needStaff,
-        needEquipment: !!form.needEquipment
-      })
+        postalCode: form.postalCode.trim() || undefined,
+        layout: form.layout,
+        needsEquipment: form.needsEquipment,
+        requiresServingStaff: form.requiresServingStaff,
+        allergies: form.allergies.trim() || undefined,
+        notes: form.notes.trim() || undefined
+      }
+      await Api.submitCateringRequest(payload)
       setResult({ ok:true })
       setForm(initialState)
     } catch (err: any) {
-      setResult({ ok:false, error: err?.response?.data?.message || 'Kunde inte skicka förfrågan. Försök igen.' })
+      const serverError = err?.response?.data
+      const message = serverError?.error?.message || serverError?.message || 'Kunde inte skicka förfrågan. Försök igen.'
+      setResult({ ok:false, error: message })
     } finally {
       setSubmitting(false)
     }
@@ -93,9 +94,24 @@ export default function Catering() {
 
   return (
     <>
-      <section className="hero">
-        <div className="container" style={{ display:'grid', gap:16 }}>
+      <section className="hero" style={{ marginLeft:'calc(50% - 50vw)', marginRight:'calc(50% - 50vw)', position:'relative' }}>
+        <div style={{ position:'absolute', inset:0, zIndex:0, overflow:'hidden' }} aria-hidden>
+          <video
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            style={{ width:'100%', height:'100%', objectFit:'cover', filter:'contrast(1.05) saturate(1.05)' }}
+          >
+            <source src="https://res.cloudinary.com/dbo4e8iuc/video/upload/v1757445234/kebab-traditional-turkish-meat-food-with-salad-on-4k-2025-08-29-08-20-40-utc_a0b2e8.mp4" type="video/mp4" />
+          </video>
+        </div>
+        <div style={{ position:'absolute', inset:0, zIndex:1, background:'linear-gradient(180deg, rgba(0,0,0,.60), rgba(0,0,0,.45) 30%, rgba(0,0,0,.35))' }} />
+        <div style={{ position:'absolute', top:12, left:'50%', transform:'translateX(-50%)', width:'min(1100px, 100%)', padding:'0 16px', zIndex:3 }}>
           <div className="pill"><span className="dot"/> Catering & Event</div>
+        </div>
+        <div className="container" style={{ display:'grid', gap:16, position:'relative', zIndex:2 }}>
           <h1 className="title-xl" style={{ margin:0 }}>Låt oss ta hand om ert nästa event</h1>
           <p className="muted" style={{ maxWidth:760 }}>
             Från företagsluncher och bröllop till födelsedagar och festivaler. Vi levererar
@@ -115,18 +131,22 @@ export default function Catering() {
             {result && !result.ok && result.error && (
               <div className="pill" style={{ background:'#3a0f0f', borderColor:'#5a1a1a' }}>{result.error}</div>
             )}
-            <form onSubmit={onSubmit} className="grid" style={{ gridTemplateColumns:'1fr 1fr', gap:16 }}>
+            <form
+              onSubmit={onSubmit}
+              className="grid"
+              style={{ gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:16 }}
+            >
               <div>
                 <label>Kontaktperson</label>
-                <input value={form.name} onChange={e=>update('name', e.target.value)} placeholder="Namn" required />
+                <input value={form.contactName} onChange={e=>update('contactName', e.target.value)} placeholder="Namn" required />
               </div>
               <div>
                 <label>Telefon</label>
-                <input value={form.phone} onChange={e=>update('phone', e.target.value)} placeholder="ex. 070-123 45 67" required />
+                <input type="tel" inputMode="tel" value={form.phone} onChange={e=>update('phone', e.target.value)} placeholder="ex. 070-123 45 67" required />
               </div>
               <div>
                 <label>E-post</label>
-                <input type="email" value={form.email} onChange={e=>update('email', e.target.value)} placeholder="namn@företag.se" />
+                <input type="email" value={form.email} onChange={e=>update('email', e.target.value)} placeholder="namn@företag.se" required />
               </div>
               <div>
                 <label>Företag/Organisation</label>
@@ -142,15 +162,15 @@ export default function Catering() {
               </div>
               <div>
                 <label>Antal gäster</label>
-                <input type="number" min="1" value={form.guests} onChange={e=>update('guests', e.target.value)} placeholder="t.ex. 60" required />
+                <input type="number" min="1" value={form.guests} onChange={e=>update('guests', e.target.value)} placeholder="t.ex. 60" />
               </div>
               <div>
                 <label>Budget per person (kr)</label>
-                <input type="number" min="0" value={form.budgetPerPerson} onChange={e=>update('budgetPerPerson', e.target.value)} placeholder="t.ex. 150" />
+                <input type="number" min="0" value={form.budgetPerPersonKr} onChange={e=>update('budgetPerPersonKr', e.target.value)} placeholder="t.ex. 150" />
               </div>
               <div style={{ gridColumn:'1 / -1' }}>
                 <label>Adress (leverans/plats)</label>
-                <input value={form.locationAddress} onChange={e=>update('locationAddress', e.target.value)} placeholder="Gatuadress" />
+                <input value={form.street} onChange={e=>update('street', e.target.value)} placeholder="Gatuadress" />
               </div>
               <div>
                 <label>Postnummer</label>
@@ -162,37 +182,37 @@ export default function Catering() {
               </div>
               <div>
                 <label>Upplägg</label>
-                <select value={form.serviceStyle} onChange={e=>update('serviceStyle', e.target.value as FormState['serviceStyle'])}>
+                <select value={form.layout} onChange={e=>update('layout', e.target.value as FormState['layout'])}>
                   <option value="BUFFET">Buffé</option>
-                  <option value="DROP_OFF">Drop-off (leverans)</option>
-                  <option value="LIVE_GRILL">Livegrill på plats</option>
+                  <option value="PLATED">Tallriksservering</option>
+                  <option value="FAMILY_STYLE">Family style</option>
                   <option value="OTHER">Annat</option>
                 </select>
               </div>
               <div>
                 <label>Krävs serveringspersonal?</label>
-                <select value={form.needStaff ? 'yes' : 'no'} onChange={e=>update('needStaff', e.target.value === 'yes')}>
-                  <option value="yes">Ja</option>
-                  <option value="no">Nej</option>
+                <select value={form.requiresServingStaff} onChange={e=>update('requiresServingStaff', e.target.value as 'YES'|'NO')}>
+                  <option value="YES">Ja</option>
+                  <option value="NO">Nej</option>
                 </select>
               </div>
               <div>
                 <label>Behövs utrustning (t.ex. värmeskåp, porslin)?</label>
-                <select value={form.needEquipment ? 'yes' : 'no'} onChange={e=>update('needEquipment', e.target.value === 'yes')}>
-                  <option value="no">Nej</option>
-                  <option value="yes">Ja</option>
+                <select value={form.needsEquipment} onChange={e=>update('needsEquipment', e.target.value as 'YES'|'NO')}>
+                  <option value="NO">Nej</option>
+                  <option value="YES">Ja</option>
                 </select>
               </div>
               <div style={{ gridColumn:'1 / -1' }}>
                 <label>Allergier och önskemål</label>
-                <textarea rows={3} value={form.dietary} onChange={e=>update('dietary', e.target.value)} placeholder="Vegetariskt, veganskt, glutenfritt, nötallergi, etc." />
+                <textarea rows={3} value={form.allergies} onChange={e=>update('allergies', e.target.value)} placeholder="Vegetariskt, veganskt, glutenfritt, nötallergi, etc." />
               </div>
               <div style={{ gridColumn:'1 / -1' }}>
                 <label>Övrigt</label>
-                <textarea rows={4} value={form.message} onChange={e=>update('message', e.target.value)} placeholder="Berätta gärna mer om tillställningen" />
+                <textarea rows={4} value={form.notes} onChange={e=>update('notes', e.target.value)} placeholder="Berätta gärna mer om tillställningen" />
               </div>
-              <div style={{ gridColumn:'1 / -1', display:'flex', gap:12, alignItems:'center' }}>
-                <button className="btn" disabled={submitting} type="submit">{submitting ? 'Skickar…' : 'Skicka förfrågan'}</button>
+              <div style={{ gridColumn:'1 / -1', display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
+                <button className="btn" disabled={submitting} type="submit" style={{ width:'min(260px, 100%)' }}>{submitting ? 'Skickar…' : 'Skicka förfrågan'}</button>
                 <span className="muted">Vi svarar vanligtvis inom 1–2 arbetsdagar.</span>
               </div>
             </form>
