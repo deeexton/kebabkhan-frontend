@@ -12,12 +12,11 @@ export default function Header() {
   }, [loc.pathname])
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24)
-    onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
   return (
-    <header className={`sticky ${scrolled ? 'scrolled' : ''}`}>
+    <header className={`sticky ${scrolled ? 'scrolled' : ''} ${menuOpen ? 'menu-open' : ''}`}>
       <div className="container" style={{ padding:'12px 0' }}>
         {/* Desktop layout */}
         <div className="header-desktop" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -89,6 +88,7 @@ export default function Header() {
           .header-desktop > a { display:none !important; }
           .header-mobile-center { display:flex; }
           header.scrolled .header-mobile-center { display:none !important; }
+          header.menu-open .header-mobile-center { display:flex !important; }
         }
       `}</style>
     </header>
