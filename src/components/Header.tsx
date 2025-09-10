@@ -17,7 +17,7 @@ export default function Header() {
   }, [])
   return (
     <header className={`sticky ${scrolled ? 'scrolled' : ''} ${menuOpen ? 'menu-open' : ''}`}>
-      <div className="container" style={{ padding:'12px 0' }}>
+      <div className="container" style={{ padding:'12px 0', position:'relative' }}>
         {/* Desktop layout */}
         <div className="header-desktop" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <Link to="/" style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -68,7 +68,7 @@ export default function Header() {
         )}
 
         {/* Mobile centered logo row */}
-        <div className="header-mobile-center" style={{ display:'none', alignItems:'center', justifyContent:'center' }}>
+        <div className="header-mobile-center" style={{ display:'none', alignItems:'center', justifyContent:'center', position:'absolute', top:6, left:'50%', transform:'translateX(-50%)', zIndex:2 }}>
           <Link to="/" style={{ display:'inline-flex' }}>
             <img
               src="https://res.cloudinary.com/dbo4e8iuc/image/upload/v1757346176/Header_mr676f.png"
@@ -86,9 +86,9 @@ export default function Header() {
           .nav-desktop { display:none !important; }
           .hamburger { display:inline-flex !important; justify-self:end; }
           .header-desktop > a { display:none !important; }
-          .header-mobile-center { display:flex !important; }
-          header.scrolled .header-mobile-center { display:none !important; }
-          header.menu-open .header-mobile-center { display:flex !important; }
+          .header-mobile-center { display:flex !important; opacity:1; transform:translate(-50%, 0); transition: opacity .28s ease, transform .28s ease; }
+          header.scrolled .header-mobile-center { opacity:0; transform:translate(-50%, -8px); visibility:hidden; pointer-events:none; }
+          header.menu-open .header-mobile-center { opacity:1 !important; visibility:visible; pointer-events:auto; transform:translate(-50%, 0); }
         }
       `}</style>
     </header>
