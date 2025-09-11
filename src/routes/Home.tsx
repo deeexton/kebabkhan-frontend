@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom'
-import { MENU } from '../data/menu'
 import { useEffect, useRef, useState } from 'react'
 import { Api, MenuItem } from '../api'
 
 export default function Home() {
   const [items, setItems] = useState<MenuItem[]>([])
   useEffect(() => { Api.listMenu().then(setItems).catch(()=>{}) }, [])
-  const data = items.length ? items : MENU
+  const data = items
   const grillItems = data.filter(m => {
     const c = (m.category || '').toLowerCase()
     return c.includes('grill') || c.includes('kolgrill') || c.includes('från grillen')
@@ -35,6 +34,7 @@ export default function Home() {
     const dx = dir === 'left' ? -Math.max(320, el.clientWidth * 0.8) : Math.max(320, el.clientWidth * 0.8)
     el.scrollBy({ left: dx, behavior: 'smooth' })
   }
+  const displayPriceSEK = (p: number) => (p >= 1000 ? Math.round(p / 100) : p)
   return (
     <>
       <section className="hero" style={{ marginLeft:'calc(50% - 50vw)', marginRight:'calc(50% - 50vw)' }}>
@@ -84,7 +84,7 @@ export default function Home() {
                 <div key={item.id} className="menu-card" style={{ scrollSnapAlign:'start' }}>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr auto', alignItems:'center', gap:8 }}>
                     <strong>{item.name}</strong>
-                    <span className="price" style={{ whiteSpace:'nowrap' }}>{item.price} kr</span>
+                    <span className="price" style={{ whiteSpace:'nowrap' }}>{displayPriceSEK(item.price)} kr</span>
                   </div>
                   <div className="muted">Från grillen</div>
                   {(() => {
