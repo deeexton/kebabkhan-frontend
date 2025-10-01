@@ -8,7 +8,6 @@ import Checkout from './routes/Checkout'
 import OrderTracking from './routes/OrderTracking'
 import AdminDashboard from './routes/AdminDashboard'
 import DriverApp from './routes/DriverApp'
-import CartDrawer from './components/CartDrawer'
 import AdminLogin from './routes/AdminLogin'
 import { Api } from './api'
 import Catering from './routes/Catering'
@@ -35,7 +34,7 @@ export default function App() {
           <Route path="/driver" element={<DriverApp />} />
         </Routes>
       </main>
-      <CartDrawer />
+      {/* Cart drawer removed per request */}
       {!window.location.pathname.startsWith('/admin') && <Footer />}
     </>
   )

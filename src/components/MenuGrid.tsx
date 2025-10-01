@@ -139,7 +139,11 @@ function OptionsLauncher({ item, onAdd, closed }: { item: MenuItem; onAdd: (item
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button className="btn" disabled={!!closed} title={closed ? 'Restaurangen är stängd för onlinebeställningar just nu.' : undefined} onClick={(e) => { e.stopPropagation(); if (closed) return; hasOptions ? setOpen(true) : onAdd(item) }}>{closed ? 'Stängt' : (hasOptions ? 'Välj' : 'Lägg till')}</button>
+      {closed ? (
+        <a className="btn" href="https://kebabkhan.qopla.com/restaurant/kebabkhan-kurdistan-/qeAA2p9x1Q/order" target="_blank" rel="noreferrer">Beställ</a>
+      ) : (
+        <button className="btn" onClick={(e) => { e.stopPropagation(); hasOptions ? setOpen(true) : onAdd(item) }}>{hasOptions ? 'Välj' : 'Lägg till'}</button>
+      )}
       {open && hasOptions && (
         <OptionsDialog item={item} onClose={() => setOpen(false)} onConfirm={(sel) => { onAdd(item, sel); setOpen(false) }} />
       )}
@@ -237,6 +241,19 @@ function OptionsDialog({ item, onClose, onConfirm }: { item: MenuItem; onClose: 
 }
 
 function ItemDetailsModal({ item, onClose, onAdd, closed }: { item: MenuItem; onClose: () => void; onAdd: (item: MenuItem, selectedOptions?: any) => void; closed?: boolean }) {
+  const hasOptions = Array.isArray(item.optionGroups) && item.optionGroups.length > 0
+  type Sel = { groupId: string; optionId: string; quantity: number }
+  const [selections, setSelections] = useState<Sel[]>([])
+  const select = (groupId: string, optionId: string) => {
+    setSelections(prev => {
+      const others = prev.filter(s => s.groupId !== groupId)
+      return [...others, { groupId, optionId, quantity: 1 }]
+    })
+  }
+  const confirm = () => {
+    onAdd(item, selections)
+    onClose()
+  }
   return (
     <div className="card" onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'grid', placeItems:'center', zIndex:1000 }}>
       <div className="card" onClick={(e)=>e.stopPropagation()} style={{ width:'min(720px, 92vw)', maxHeight:'90vh', overflow:'auto', display:'grid', gap:12 }}>
@@ -253,9 +270,41 @@ function ItemDetailsModal({ item, onClose, onAdd, closed }: { item: MenuItem; on
           {item.description ? (
             <div className="muted" style={{ whiteSpace:'pre-wrap' }}>{item.description}</div>
           ) : null}
+          {hasOptions && (
+            <div className="grid" style={{ gridTemplateColumns:'1fr', gap:8 }}>
+              {(item.optionGroups||[]).map((g, gi) => {
+                const groupId = String(g.id || g.name || gi)
+                const current = selections.find(s => s.groupId === groupId)?.optionId || ''
+                return (
+                  <div key={groupId} className="card" style={{ display:'grid', gap:8 }}>
+                    <div style={{ fontWeight:600 }}>{g.name || 'Välj tillbehör'}</div>
+                    {(g.options||[]).map((o, oi) => {
+                      const optionId = String((o as any).id || (o as any)._id || o.name || `${gi}:${oi}`)
+                      const inputId = `opt-${gi}-${oi}`
+                      const checked = current === optionId
+                      const priceDelta = (o as any)?.priceDelta
+                      return (
+                        <div key={optionId}
+                          onClick={(e) => { e.stopPropagation(); select(groupId, optionId) }}
+                          role="button"
+                          style={{ width:'100%', background: checked ? '#1a1a1a' : '#111', border:'1px solid #222', padding:'12px 14px', borderRadius:8, display:'grid', gridTemplateColumns:'1fr auto', alignItems:'center', gap:12, color:'inherit', cursor:'pointer' }}>
+                          <div>{o.name} {typeof priceDelta==='number' && priceDelta!==0 ? <span className="muted">(+{priceDelta} kr)</span> : null}</div>
+                          <input id={inputId} type="radio" name={`opt-${gi}`} checked={checked} readOnly />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
             <button className="btn secondary" onClick={onClose}>Stäng</button>
-            <OptionsLauncher item={item} onAdd={(it, sel) => { onAdd(it, sel); onClose() }} closed={closed} />
+            {closed ? (
+              <a className="btn" href="https://kebabkhan.qopla.com/restaurant/kebabkhan-kurdistan-/qeAA2p9x1Q/order" target="_blank" rel="noreferrer">Beställ</a>
+            ) : (
+              <button className="btn" onClick={confirm}>{hasOptions ? 'Beställ' : 'Lägg till'}</button>
+            )}
           </div>
         </div>
       </div>

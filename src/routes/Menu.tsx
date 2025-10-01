@@ -5,8 +5,7 @@ import { useStoreStatus } from '../store/storeStatus'
 
 export default function Menu() {
   const cart = useCart()
-  const { status, refresh } = useStoreStatus()
-  const isClosed = status ? status.onlineOrdersOpen === false : false
+  const { refresh } = useStoreStatus()
   // Refresh status on entering menu
   useEffect(() => { refresh().catch(()=>{}) }, [])
   return (
@@ -32,11 +31,6 @@ export default function Menu() {
           <span style={{ width:6, height:6, borderRadius:999, background:'#eab308', boxShadow:'0 0 0 6px rgba(234,179,8,.12)' }} />
         </div>
       </div>
-      {isClosed && (
-        <div className="card" style={{ background:'#141414', borderColor:'#333' }}>
-          {status?.message || 'Restaurangen är stängd för onlinebeställningar just nu. Vi tar gärna emot din beställning under våra öppettider. Varmt välkommen tillbaka!'}
-        </div>
-      )}
       <MenuGrid onAdd={cart.add} />
     </section>
   )

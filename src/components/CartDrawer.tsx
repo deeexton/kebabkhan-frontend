@@ -61,7 +61,7 @@ export default function CartDrawer() {
           <div style={{ display:'flex', gap:8, marginTop:12 }}>
             <button className="btn secondary" onClick={() => { cart.clear(); setOpen(false) }}>Rensa</button>
             {isClosed ? (
-              <button className="btn" disabled title={status?.message || 'Restaurangen är stängd för onlinebeställningar just nu.'}>Stängt</button>
+              <a className="btn" href="https://kebabkhan.qopla.com/restaurant/kebabkhan-kurdistan-/qeAA2p9x1Q/order" target="_blank" rel="noreferrer">Beställ</a>
             ) : (
               <Link to="/checkout" className="btn">Till kassan</Link>
             )}
