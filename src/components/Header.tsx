@@ -33,7 +33,6 @@ export default function Header() {
               <Link to="/meny" className={loc.pathname.startsWith('/meny') ? 'muted' : ''}>Meny</Link>
               <a href="https://kebabkhan.qopla.com/restaurant/kebabkhan-kurdistan-/qeAA2p9x1Q/order">Beställning</a>
               <Link to="/catering" className={loc.pathname.startsWith('/catering') ? 'muted' : ''}>Catering</Link>
-              <Link to="/kontrollera-bestallning" className={loc.pathname.startsWith('/kontrollera-bestallning') || loc.pathname.startsWith('/order/') ? 'muted' : ''}>Kontrollera beställning</Link>
               <Link to="/om-oss" className={loc.pathname.startsWith('/om-oss') ? 'muted' : ''}>Om oss</Link>
               <Link to="/kontakt" className={loc.pathname.startsWith('/kontakt') ? 'muted' : ''}>Kontakt</Link>
             </nav>
@@ -62,7 +61,6 @@ export default function Header() {
               <Link to="/meny" className={loc.pathname.startsWith('/meny') ? 'muted' : ''}>Meny</Link>
               <a href="https://kebabkhan.qopla.com/restaurant/kebabkhan-kurdistan-/qeAA2p9x1Q/order">Beställning</a>
               <Link to="/catering" className={loc.pathname.startsWith('/catering') ? 'muted' : ''}>Catering</Link>
-              <Link to="/kontrollera-bestallning" className={loc.pathname.startsWith('/kontrollera-bestallning') || loc.pathname.startsWith('/order/') ? 'muted' : ''}>Kontrollera beställning</Link>
               <Link to="/om-oss" className={loc.pathname.startsWith('/om-oss') ? 'muted' : ''}>Om oss</Link>
               <Link to="/kontakt" className={loc.pathname.startsWith('/kontakt') ? 'muted' : ''}>Kontakt</Link>
             </nav>
